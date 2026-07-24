@@ -8,6 +8,8 @@ import { ANOTA_AI_CONNECTOR_VERSION, AnotaAIAdapter } from "@/lib/integrations/a
 import { syncAnotaAiIntegration } from "@/lib/integrations/anota-ai/sync";
 import { decryptSecret } from "@/lib/security/crypto";
 import { findOrCreateCategory, persistNormalizedProduct } from "@/lib/integrations/persist-product";
+import { getCurrentUser } from "@/lib/auth/session";
+import { logAudit } from "@/lib/audit/log";
 
 export interface SaveCredentialState {
   error?: string;
@@ -74,6 +76,28 @@ export async function saveAnotaAiCredential(
 
   if (credentialResult.error) {
     return { error: "Não foi possível salvar o token." };
+  }
+
+  const { data: channelWithOrg } = await supabase
+    .from("sales_channels")
+    .select("store_id, stores(brand_id, brands(organization_id))")
+    .eq("id", parsed.data.sales_channel_id)
+    .maybeSingle();
+
+  const organizationId = (
+    channelWithOrg as unknown as { stores: { brands: { organization_id: string } } } | null
+  )?.stores?.brands?.organization_id;
+
+  if (organizationId) {
+    const user = await getCurrentUser();
+    await logAudit(supabase, {
+      organizationId,
+      actorUserId: user?.id ?? null,
+      action: existingCredential ? "update_integration_credential" : "create_integration_credential",
+      entityType: "integration",
+      entityId: integrationId,
+      metadata: { sales_channel_id: parsed.data.sales_channel_id },
+    });
   }
 
   revalidatePath("/integracoes");

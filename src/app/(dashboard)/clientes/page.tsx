@@ -4,6 +4,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/auth/session";
 import { BrandSelect } from "@/components/dashboard/brand-select";
+import { AnonymizeButton } from "./anonymize-button";
 import { buildRfmSegmentation, computeCustomerStats, type CustomerOrderInput, type RfmSegment } from "@/lib/metrics/rfm";
 import type { Brand, Store } from "@/types/database";
 
@@ -148,11 +149,13 @@ export default async function CustomersRfmPage({
                 <TableHead className="text-right">Frequência</TableHead>
                 <TableHead className="text-right">Valor total</TableHead>
                 <TableHead>Segmento</TableHead>
+                <TableHead className="text-right">LGPD</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {rfmRows.slice(0, 100).map((row) => {
                 const customer = customerById.get(row.customerId);
+                const isAnonymized = !customer?.full_name && !customer?.phone_masked;
                 return (
                   <TableRow key={row.customerId}>
                     <TableCell className="whitespace-nowrap">{customer?.full_name ?? "Não identificado"}</TableCell>
@@ -165,12 +168,15 @@ export default async function CustomersRfmPage({
                     <TableCell>
                       <Badge variant={SEGMENT_VARIANT[row.segment]}>{row.segment}</Badge>
                     </TableCell>
+                    <TableCell className="text-right">
+                      {!isAnonymized && <AnonymizeButton customerId={row.customerId} />}
+                    </TableCell>
                   </TableRow>
                 );
               })}
               {rfmRows.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-sm text-muted-foreground">
+                  <TableCell colSpan={7} className="text-center text-sm text-muted-foreground">
                     Nenhum cliente no escopo selecionado.
                   </TableCell>
                 </TableRow>
