@@ -106,6 +106,29 @@ export default async function ProductsPage({
       }))
   );
 
+  const { data: detailedOrdersRaw } = await supabase
+    .from("orders")
+    .select(
+      "id, ordered_at, gross_amount, payment_method, status, customers(full_name, phone_masked), order_items(original_name, quantity, is_addon)"
+    )
+    .in("store_id", storeFallback)
+    .gte("ordered_at", period.start.toISOString())
+    .lte("ordered_at", period.end.toISOString())
+    .order("ordered_at", { ascending: false })
+    .limit(100);
+
+  interface DetailedOrderRow {
+    id: string;
+    ordered_at: string;
+    gross_amount: number;
+    payment_method: string | null;
+    status: string;
+    customers: { full_name: string | null; phone_masked: string | null } | null;
+    order_items: { original_name: string; quantity: number; is_addon: boolean }[];
+  }
+
+  const detailedOrders = (detailedOrdersRaw ?? []) as unknown as DetailedOrderRow[];
+
   const rankingRows = buildProductRanking(orderItemsFlat);
   const topByQuantity = rankByQuantity(rankingRows).slice(0, 15);
   const topByRevenue = rankByRevenue(rankingRows).slice(0, 15);
@@ -236,6 +259,62 @@ export default async function ProductsPage({
               <p className="text-sm text-muted-foreground">Sem dados no período.</p>
             )}
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Pedidos do período</CardTitle>
+          <CardDescription>
+            Até 100 pedidos mais recentes no escopo selecionado. Telefone sempre
+            mascarado (LGPD) — ver SECURITY.md.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Data</TableHead>
+                <TableHead>Cliente</TableHead>
+                <TableHead>Telefone</TableHead>
+                <TableHead>Produto(s)</TableHead>
+                <TableHead>Pagamento</TableHead>
+                <TableHead className="text-right">Valor</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {detailedOrders.map((order) => (
+                <TableRow key={order.id}>
+                  <TableCell className="whitespace-nowrap text-xs">
+                    {new Date(order.ordered_at).toLocaleString("pt-BR")}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {order.customers?.full_name ?? "Não identificado"}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap text-xs">
+                    {order.customers?.phone_masked ?? "—"}
+                  </TableCell>
+                  <TableCell className="max-w-xs truncate text-xs">
+                    {order.order_items.length > 0
+                      ? order.order_items
+                          .filter((i) => !i.is_addon)
+                          .map((i) => `${i.quantity}x ${i.original_name}`)
+                          .join(", ")
+                      : "—"}
+                  </TableCell>
+                  <TableCell className="text-xs">{order.payment_method ?? "—"}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(order.gross_amount)}</TableCell>
+                </TableRow>
+              ))}
+              {detailedOrders.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center text-sm text-muted-foreground">
+                    Nenhum pedido no período selecionado.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
         </CardContent>
       </Card>
 
