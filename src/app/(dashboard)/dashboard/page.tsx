@@ -22,6 +22,7 @@ import {
   uniqueCustomers,
   type OrderMetricInput,
 } from "@/lib/metrics/orders";
+import { buildProductRanking, rankByRevenue, type ProductOrderItemInput } from "@/lib/metrics/products";
 import type { Brand, Store } from "@/types/database";
 
 function formatCurrency(value: number | null) {
@@ -138,6 +139,33 @@ export default async function ExecutiveDashboardPage({
 
   const detailedOrders = (detailedOrdersRaw ?? []) as unknown as DetailedOrderRow[];
 
+  const { data: orderItemsRaw } = await supabase
+    .from("orders")
+    .select("status, ordered_at, order_items(original_name, quantity, total_price, is_addon)")
+    .in("store_id", storeFallback)
+    .gte("ordered_at", period.start.toISOString())
+    .lte("ordered_at", period.end.toISOString());
+
+  interface OrderWithItems {
+    status: string;
+    ordered_at: string;
+    order_items: { original_name: string; quantity: number; total_price: number; is_addon: boolean }[];
+  }
+
+  const orderItemsFlat: ProductOrderItemInput[] = ((orderItemsRaw ?? []) as unknown as OrderWithItems[]).flatMap(
+    (order) =>
+      order.order_items.map((item) => ({
+        original_name: item.original_name,
+        quantity: item.quantity,
+        total_price: item.total_price,
+        is_addon: item.is_addon,
+        order_status: order.status,
+        ordered_at: order.ordered_at,
+      }))
+  );
+
+  const topProducts = rankByRevenue(buildProductRanking(orderItemsFlat)).slice(0, 10);
+
   const currentOrders = (currentOrdersRaw ?? []) as OrderMetricInput[];
   const previousOrders = (previousOrdersRaw ?? []) as OrderMetricInput[];
 
@@ -253,6 +281,43 @@ export default async function ExecutiveDashboardPage({
           </CardHeader>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Produtos mais vendidos</CardTitle>
+          <CardDescription>
+            Top 10 por faturamento, pedidos concluídos no período. Ranking completo em{" "}
+            <span className="font-medium">Produtos</span>.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Produto</TableHead>
+                <TableHead className="text-right">Qtd.</TableHead>
+                <TableHead className="text-right">Faturamento</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {topProducts.map((row) => (
+                <TableRow key={row.name}>
+                  <TableCell className="max-w-[220px] truncate">{row.name}</TableCell>
+                  <TableCell className="text-right">{row.quantity}</TableCell>
+                  <TableCell className="text-right">{formatCurrency(row.revenue)}</TableCell>
+                </TableRow>
+              ))}
+              {topProducts.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={3} className="text-center text-sm text-muted-foreground">
+                    Nenhuma venda concluída no período.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
