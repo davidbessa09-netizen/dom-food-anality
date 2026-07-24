@@ -34,19 +34,21 @@
 - Mascaramento: `customers.phone_masked`/`email_masked` são os únicos campos
   exibidos na UI; hashes (`phone_hash`/`email_hash`) servem só para
   deduplicação, nunca exibidos.
-- Direito à exclusão/anonimização: **ainda não implementado** — não existe
-  rotina/tela que substitua `full_name`/`phone_masked`/`email_masked` por
-  anonimização irreversível. Necessário antes de tratar o sistema como
-  compatível com pedidos de exclusão de titular (LGPD art. 18).
+- Direito à exclusão/anonimização: botão "Anonimizar" em `/clientes`
+  (`src/app/(dashboard)/clientes/actions.ts`) substitui `full_name`,
+  `phone_masked`, `email_masked`, `phone_hash` e `email_hash` por `null` de
+  forma irreversível, mantendo o histórico agregado de pedidos (necessário
+  para métricas) sem identificação pessoal. Ação registrada em
+  `audit_logs`.
 - Retenção: política default sugerida de 24 meses para dados pessoais de
   cliente identificável, configurável por organização — **ainda não
   implementada como rotina automática**, é só uma diretriz a decidir com o
   responsável pelo tratamento de dados da empresa.
-- Auditoria: a tabela `audit_logs` existe no schema e tem RLS habilitado, mas
-  **nenhum código da aplicação grava nela ainda** — nenhuma tela ou action
-  atual registra acesso/exportação de dado de cliente. Isso é uma lacuna
-  conhecida, não um recurso em produção; implementar antes de tratar este
-  item como cumprido para fins de conformidade.
+- Auditoria: `src/lib/audit/log.ts` grava em `audit_logs` (organização,
+  ator, ação, entidade). Hoje registrado em: anonimização de cliente e
+  criação/atualização de credencial de integração. Cobertura ainda parcial
+  — não cobre toda leitura/exportação de dado de cliente, só as ações de
+  escrita mais sensíveis.
 
 ## Auditoria de RLS (2026-07-24)
 
