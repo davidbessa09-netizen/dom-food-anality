@@ -96,4 +96,15 @@ describe("toNormalizedAnotaAiOrder", () => {
     expect(normalized.status).toBe("cancelado");
     expect(normalized.cancellation_reason).toContain("Negado");
   });
+
+  it("extrai o bairro do endereço de entrega quando presente", () => {
+    const withAddress = { ...sampleOrder, deliveryAddress: { neighborhood: "Centro" } };
+    const normalized = toNormalizedAnotaAiOrder(withAddress, context);
+    expect(normalized.neighborhood_raw).toBe("Centro");
+  });
+
+  it("deixa neighborhood_raw indefinido quando não há endereço de entrega", () => {
+    const normalized = toNormalizedAnotaAiOrder(sampleOrder, context);
+    expect(normalized.neighborhood_raw).toBeUndefined();
+  });
 });

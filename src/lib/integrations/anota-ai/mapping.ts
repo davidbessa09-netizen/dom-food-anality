@@ -104,6 +104,7 @@ export function toNormalizedAnotaAiOrder(
     gross_amount: order.total,
     discount_amount: discountAmount,
     delivery_fee_amount: order.deliveryFee ?? 0,
+    neighborhood_raw: order.deliveryAddress?.neighborhood ?? undefined,
     ordered_at: order.createdAt,
     completed_at: status === "concluido" ? order.updatedAt : undefined,
     cancelled_at: status === "cancelado" ? order.updatedAt : undefined,
