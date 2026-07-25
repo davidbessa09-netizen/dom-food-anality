@@ -1,137 +1,113 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
-  LayoutDashboard,
-  Store,
-  ShoppingCart,
-  Package,
-  Route,
-  Users,
-  Layers,
-  Combine,
-  Ban,
-  Bell,
-  Sparkles,
-  MapPinned,
-  Plug,
-  Upload,
-  GitMerge,
-  ShieldCheck,
-  History,
-  Settings,
-  UserCog,
-  ChevronsLeft,
-  ChevronsRight,
-} from "lucide-react";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { NavContent } from "./nav-content";
+import { getVisibleNavGroups } from "./nav-items";
+import { logout } from "@/app/login/actions";
+import { ChevronsLeft, ChevronsRight, LogOut } from "lucide-react";
 
-const NAV_GROUPS = [
-  {
-    label: "Visão geral",
-    items: [
-      { href: "/dashboard", label: "Dashboard executivo", icon: LayoutDashboard },
-      { href: "/lojas", label: "Comparação de lojas", icon: Store },
-    ],
-  },
-  {
-    label: "Análise",
-    items: [
-      { href: "/vendas", label: "Vendas", icon: ShoppingCart },
-      { href: "/produtos", label: "Produtos", icon: Package },
-      { href: "/jornada", label: "Jornada do cliente", icon: Route },
-      { href: "/clientes", label: "Clientes e RFM", icon: Users },
-      { href: "/categorias", label: "Categorias", icon: Layers },
-      { href: "/combos", label: "Combos e associações", icon: Combine },
-      { href: "/cancelamentos", label: "Cancelamentos", icon: Ban },
-      { href: "/bairros", label: "Bairros e regiões", icon: MapPinned },
-    ],
-  },
-  {
-    label: "Inteligência",
-    items: [
-      { href: "/alertas", label: "Alertas", icon: Bell },
-      { href: "/recomendacoes", label: "Recomendações", icon: Sparkles },
-    ],
-  },
-  {
-    label: "Dados",
-    items: [
-      { href: "/integracoes", label: "Integrações", icon: Plug },
-      { href: "/importacoes", label: "Importações", icon: Upload },
-      { href: "/correspondencia-produtos", label: "Correspondência de produtos", icon: GitMerge },
-      { href: "/qualidade-dados", label: "Qualidade dos dados", icon: ShieldCheck },
-      { href: "/sincronizacoes", label: "Histórico de sincronizações", icon: History },
-    ],
-  },
-  {
-    label: "Administração",
-    items: [
-      { href: "/configuracoes", label: "Configurações", icon: Settings },
-      { href: "/usuarios", label: "Usuários e permissões", icon: UserCog },
-    ],
-  },
-];
+const ROLE_LABELS: Record<string, string> = {
+  admin_geral: "Administrador geral",
+  gestor_marca: "Gestor de marca",
+  gestor_loja: "Gestor de loja",
+  analista: "Analista",
+  somente_leitura: "Somente leitura",
+};
 
-export function SidebarNav() {
-  const pathname = usePathname();
+function initials(text: string): string {
+  const clean = text.trim();
+  if (!clean) return "?";
+  const parts = clean.split(/[\s@.]+/).filter(Boolean);
+  return (parts[0]?.[0] ?? "?").toUpperCase() + (parts[1]?.[0] ?? "").toUpperCase();
+}
+
+export function SidebarNav({
+  organizationName,
+  email,
+  role,
+  isAdmin,
+}: {
+  organizationName: string | null;
+  email: string;
+  role: string | undefined;
+  isAdmin: boolean;
+}) {
   const [collapsed, setCollapsed] = useState(false);
+  const groups = getVisibleNavGroups(isAdmin);
 
   return (
     <aside
-      className={cn(
-        "flex h-screen flex-col border-r bg-sidebar text-sidebar-foreground transition-all duration-200",
-        collapsed ? "w-16" : "w-64"
-      )}
+      className="hidden h-screen shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground transition-all duration-200 md:flex"
+      style={{ width: collapsed ? 72 : 256, minWidth: collapsed ? 72 : 256 }}
     >
       <div className="flex items-center justify-between px-3 py-4">
-        {!collapsed && <span className="truncate font-semibold">DOM Food Analytics</span>}
+        {!collapsed && (
+          <div className="flex items-center gap-2 truncate">
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary text-xs font-bold text-primary-foreground">
+              D
+            </span>
+            <span className="truncate font-heading text-sm font-semibold">DOM Food Analytics</span>
+          </div>
+        )}
         <Button
           variant="ghost"
-          size="icon"
+          size="icon-sm"
           onClick={() => setCollapsed((c) => !c)}
           aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
+          className={collapsed ? "mx-auto" : undefined}
         >
           {collapsed ? <ChevronsRight className="size-4" /> : <ChevronsLeft className="size-4" />}
         </Button>
       </div>
 
-      <nav className="flex-1 space-y-4 overflow-y-auto px-2 pb-4">
-        {NAV_GROUPS.map((group) => (
-          <div key={group.label}>
+      <NavContent groups={groups} collapsed={collapsed} />
+
+      <div className="border-t p-2">
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <button
+                type="button"
+                className={cn(
+                  "flex w-full items-center gap-2 rounded-md p-2 text-left hover:bg-sidebar-accent",
+                  collapsed && "justify-center"
+                )}
+              />
+            }
+          >
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-semibold text-secondary-foreground">
+              {initials(email)}
+            </span>
             {!collapsed && (
-              <p className="px-2 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                {group.label}
-              </p>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-xs font-medium">{organizationName ?? "—"}</span>
+                <span className="block truncate text-xs text-muted-foreground">{email}</span>
+              </span>
             )}
-            <ul className="space-y-0.5">
-              {group.items.map(({ href, label, icon: Icon }) => {
-                const active = pathname === href || pathname.startsWith(`${href}/`);
-                return (
-                  <li key={href}>
-                    <Link
-                      href={href}
-                      className={cn(
-                        "flex items-center gap-2 rounded-md px-2 py-2 text-sm transition-colors",
-                        active
-                          ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                          : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                      )}
-                      title={collapsed ? label : undefined}
-                    >
-                      <Icon className="size-4 shrink-0" />
-                      {!collapsed && <span className="truncate">{label}</span>}
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        ))}
-      </nav>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" side="top" className="w-56">
+            <DropdownMenuLabel>
+              <span className="block truncate font-medium">{email}</span>
+              {role && <span className="block text-xs font-normal text-muted-foreground">{ROLE_LABELS[role] ?? role}</span>}
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem variant="destructive" onClick={() => logout()}>
+              <LogOut className="size-4" />
+              Sair
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
     </aside>
   );
 }
