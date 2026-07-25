@@ -23,6 +23,8 @@ import {
   type OrderMetricInput,
 } from "@/lib/metrics/orders";
 import { buildProductRanking, rankByRevenue, type ProductOrderItemInput } from "@/lib/metrics/products";
+import { KpiLabel } from "@/components/dashboard/kpi-label";
+import { AboutDataDialog, type SyncCoverageRow } from "@/components/dashboard/about-data-dialog";
 import type { Brand, Store } from "@/types/database";
 
 function formatCurrency(value: number | null) {
@@ -83,6 +85,29 @@ export default async function ExecutiveDashboardPage({
 
   const storeIds = (stores ?? []).map((s) => s.id);
   const storeFallback = storeIds.length ? storeIds : fallback;
+
+  // Cobertura de sincronização (dado real, pro painel "Sobre estes dados") —
+  // mesmo padrão de leitura usado em /alertas.
+  const { data: channelsForCoverage } = await supabase
+    .from("sales_channels")
+    .select("id, store_id, platform")
+    .in("store_id", storeFallback);
+
+  const { data: integrationsForCoverage } = await supabase
+    .from("integrations")
+    .select("sales_channel_id, last_synced_at, is_active")
+    .in("sales_channel_id", (channelsForCoverage ?? []).map((c) => c.id).length ? (channelsForCoverage ?? []).map((c) => c.id) : fallback);
+
+  const storeById = new Map((stores ?? []).map((s) => [s.id, s]));
+  const syncCoverage: SyncCoverageRow[] = (channelsForCoverage ?? []).map((channel) => {
+    const integration = (integrationsForCoverage ?? []).find((i) => i.sales_channel_id === channel.id);
+    return {
+      storeName: storeById.get(channel.store_id)?.name ?? "—",
+      platform: channel.platform,
+      lastSyncedAt: integration?.last_synced_at ?? null,
+      isActive: integration?.is_active ?? false,
+    };
+  });
 
   const period = customFrom && customTo ? resolveCustomPeriod(customFrom, customTo) : resolvePeriod(preset);
   const previous = previousPeriod(period);
@@ -198,13 +223,17 @@ export default async function ExecutiveDashboardPage({
           <BrandSelect brands={(brands ?? []).map((b) => ({ id: b.id, name: b.name }))} current={selectedBrandId} />
           <PeriodSelect current={preset} />
           <DateRangePicker from={customFrom} to={customTo} />
+          <AboutDataDialog coverage={syncCoverage} />
         </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Faturamento bruto</CardDescription>
+            <KpiLabel
+              label="Faturamento bruto"
+              definition="Soma de todos os pedidos não cancelados no período — inclui pedidos ainda em andamento, não só concluídos."
+            />
             <CardTitle className="text-3xl">{formatCurrency(gross)}</CardTitle>
           </CardHeader>
           <CardContent>
@@ -213,7 +242,10 @@ export default async function ExecutiveDashboardPage({
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Faturamento líquido</CardDescription>
+            <KpiLabel
+              label="Faturamento líquido"
+              definition="Soma do valor líquido só quando a plataforma de origem informa esse dado. Mostra 'indisponível' quando nenhum pedido do período tem esse valor."
+            />
             <CardTitle className="text-3xl">{formatCurrency(net)}</CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground">
@@ -222,7 +254,10 @@ export default async function ExecutiveDashboardPage({
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Ticket médio</CardDescription>
+            <KpiLabel
+              label="Ticket médio"
+              definition="Base diferente do Faturamento bruto: só pedidos CONCLUÍDOS entram aqui (o faturamento bruto ao lado inclui pedidos em andamento). Ver METRICS_AUDIT.md."
+            />
             <CardTitle className="text-3xl">{formatCurrency(ticket)}</CardTitle>
           </CardHeader>
           <CardContent>
@@ -231,7 +266,10 @@ export default async function ExecutiveDashboardPage({
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Taxa de cancelamento</CardDescription>
+            <KpiLabel
+              label="Taxa de cancelamento"
+              definition="Pedidos cancelados dividido pelo total de pedidos do período (todos os status, não só concluídos)."
+            />
             <CardTitle className="text-3xl">{formatPercent(cancellationRate(currentOrders))}</CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground">
@@ -243,19 +281,22 @@ export default async function ExecutiveDashboardPage({
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Total de pedidos</CardDescription>
+            <KpiLabel label="Total de pedidos" definition="Contagem de todos os pedidos do período, incluindo cancelados e em qualquer estágio." />
             <CardTitle className="text-2xl">{totalOrders(currentOrders)}</CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Pedidos concluídos</CardDescription>
+            <KpiLabel label="Pedidos concluídos" definition="Contagem de pedidos com status = concluído." />
             <CardTitle className="text-2xl">{completedOrdersCount(currentOrders)}</CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Clientes únicos</CardDescription>
+            <KpiLabel
+              label="Clientes únicos"
+              definition="Clientes distintos identificados no período — pedidos sem cliente vinculado ficam fora da contagem."
+            />
             <CardTitle className="text-2xl">{uniqueCustomers(currentOrders)}</CardTitle>
           </CardHeader>
         </Card>
