@@ -4,6 +4,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/auth/session";
 import { ProductForm } from "./product-form";
+import { ProductsTable } from "./products-table";
 import { BrandSelect } from "@/components/dashboard/brand-select";
 import { CategorySelect } from "@/components/dashboard/category-select";
 import { PeriodSelect } from "@/components/dashboard/period-select";
@@ -323,15 +324,18 @@ export default async function ProductsPage({
           <CardTitle className="text-base">Produtos do catálogo sem venda no período</CardTitle>
           <CardDescription>
             Não classifica automaticamente como &quot;produto ruim&quot; — só informa ausência de
-            venda registrada.
+            venda registrada. {withoutSales.length > 60 && "Use o filtro de marca/categoria acima para refinar."}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
-          {withoutSales.map((product) => (
+          {withoutSales.slice(0, 60).map((product) => (
             <Badge key={product.id} variant="outline">
               {product.canonical_name}
             </Badge>
           ))}
+          {withoutSales.length > 60 && (
+            <Badge variant="secondary">+{withoutSales.length - 60} mais</Badge>
+          )}
           {withoutSales.length === 0 && (
             <p className="text-sm text-muted-foreground">
               {catalogNames.length === 0
@@ -357,35 +361,15 @@ export default async function ProductsPage({
           <CardDescription>{(products ?? []).length} produto(s)</CardDescription>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Produto</TableHead>
-                <TableHead>Marca</TableHead>
-                <TableHead>Categoria</TableHead>
-                <TableHead className="text-right">Preço atual</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(products ?? []).map((p) => (
-                <TableRow key={p.id}>
-                  <TableCell className="font-medium">{p.canonical_name}</TableCell>
-                  <TableCell>{brandById.get(p.brand_id)?.name ?? "—"}</TableCell>
-                  <TableCell>
-                    {p.category_id ? categoryById.get(p.category_id)?.canonical_name ?? "—" : "—"}
-                  </TableCell>
-                  <TableCell className="text-right">{formatCurrency(p.current_price)}</TableCell>
-                </TableRow>
-              ))}
-              {(products ?? []).length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={4} className="text-center text-sm text-muted-foreground">
-                    Nenhum produto cadastrado ainda.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
+          <ProductsTable
+            products={(products ?? []).map((p) => ({
+              id: p.id,
+              canonical_name: p.canonical_name,
+              brandName: brandById.get(p.brand_id)?.name ?? "—",
+              categoryName: p.category_id ? categoryById.get(p.category_id)?.canonical_name ?? "—" : "—",
+              price: p.current_price,
+            }))}
+          />
         </CardContent>
       </Card>
     </div>

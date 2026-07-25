@@ -1,8 +1,8 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/auth/session";
 import { CategoryForm } from "./category-form";
+import { CategoriesList } from "./categories-list";
 import type { Brand, Category } from "@/types/database";
 
 export default async function CategoriesPage() {
@@ -50,26 +50,18 @@ export default async function CategoriesPage() {
           <CardTitle className="text-base">Categorias cadastradas</CardTitle>
           <CardDescription>{(categories ?? []).length} categoria(s)</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          {(brands ?? []).map((brand) => {
-            const brandCategories = (categories ?? []).filter((c) => c.brand_id === brand.id);
-            if (brandCategories.length === 0) return null;
-            return (
-              <div key={brand.id}>
-                <p className="mb-2 font-medium">{brand.name}</p>
-                <div className="flex flex-wrap gap-2">
-                  {brandCategories.map((c) => (
-                    <Badge key={c.id} variant="secondary">
-                      {c.canonical_name}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-          {(categories ?? []).length === 0 && (
-            <p className="text-sm text-muted-foreground">Nenhuma categoria cadastrada ainda.</p>
-          )}
+        <CardContent>
+          <CategoriesList
+            groups={(brands ?? [])
+              .map((brand) => ({
+                brandId: brand.id,
+                brandName: brand.name,
+                categories: (categories ?? [])
+                  .filter((c) => c.brand_id === brand.id)
+                  .map((c) => ({ id: c.id, canonical_name: c.canonical_name })),
+              }))
+              .filter((g) => g.categories.length > 0)}
+          />
         </CardContent>
       </Card>
     </div>
