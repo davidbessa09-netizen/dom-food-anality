@@ -84,7 +84,6 @@ export default async function ProductsPage({
     .gte("ordered_at", period.start.toISOString())
     .lte("ordered_at", period.end.toISOString());
   if (filters.channel) ordersInPeriodQuery = ordersInPeriodQuery.eq("source_platform", filters.channel);
-  if (filters.status) ordersInPeriodQuery = ordersInPeriodQuery.eq("status", filters.status);
   if (filters.fulfillment) ordersInPeriodQuery = ordersInPeriodQuery.eq("fulfillment_type", filters.fulfillment);
   const { data: ordersInPeriod } = await ordersInPeriodQuery;
 
@@ -118,7 +117,6 @@ export default async function ProductsPage({
     .order("ordered_at", { ascending: false })
     .limit(100);
   if (filters.channel) detailedOrdersQuery = detailedOrdersQuery.eq("source_platform", filters.channel);
-  if (filters.status) detailedOrdersQuery = detailedOrdersQuery.eq("status", filters.status);
   if (filters.fulfillment) detailedOrdersQuery = detailedOrdersQuery.eq("fulfillment_type", filters.fulfillment);
   const { data: detailedOrdersRaw } = await detailedOrdersQuery;
 
@@ -161,7 +159,7 @@ export default async function ProductsPage({
       </div>
 
       <GlobalFilterBar
-        fields={["brand", "stores", "channel", "category", "period", "status", "fulfillment"]}
+        fields={["brand", "stores", "channel", "category", "period", "fulfillment"]}
         brands={(brands ?? []).map((b) => ({ id: b.id, name: b.name }))}
         stores={(stores ?? []).map((s) => ({ id: s.id, name: s.name }))}
         categories={(categories ?? []).map((c) => ({ id: c.id, name: c.canonical_name }))}
@@ -171,7 +169,6 @@ export default async function ProductsPage({
         currentPeriodPreset={preset}
         currentFrom={customFrom}
         currentTo={customTo}
-        currentStatus={filters.status}
         currentFulfillment={filters.fulfillment}
         currentCategoryId={validSelectedCategoryId}
       />

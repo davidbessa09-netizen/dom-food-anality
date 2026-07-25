@@ -15,6 +15,7 @@ import {
   totalLostAmount,
   type CancelledOrderInput,
 } from "@/lib/metrics/cancellations";
+import { cancellationRate as calculateCancellationRate, type OrderMetricInput } from "@/lib/metrics/orders";
 import type { Brand, Store } from "@/types/database";
 
 function formatCurrency(value: number) {
@@ -103,7 +104,10 @@ export default async function CancellationsPage({
   );
 
   const totalOrdersCount = (allOrdersRaw ?? []).length;
-  const cancellationRate = totalOrdersCount > 0 ? cancelledOrders.length / totalOrdersCount : null;
+  // Reusa a mesma função de src/lib/metrics/orders.ts usada no dashboard, em
+  // vez de recalcular a divisão aqui — evita duas implementações divergentes
+  // do mesmo indicador (ver METRICS_AUDIT.md).
+  const cancellationRate = calculateCancellationRate((allOrdersRaw ?? []) as unknown as OrderMetricInput[]);
   const lostAmount = totalLostAmount(cancelledOrders);
   const byStore = cancellationsByStore(cancelledOrders);
   const byReason = cancellationsByReason(cancelledOrders);
