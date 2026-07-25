@@ -7,9 +7,9 @@ name: Sincronização automática (Anota AI)
 # repositório (Settings → Secrets and variables → Actions).
 
 on:
+  workflow_dispatch:
   schedule:
     - cron: "*/10 * * * *"
-  workflow_dispatch: {}
 
 jobs:
   sync:
