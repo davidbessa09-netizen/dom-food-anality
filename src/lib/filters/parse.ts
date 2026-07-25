@@ -4,6 +4,7 @@ import type { ComparisonMode } from "./types";
 export interface ParsedFilters {
   brandId: string | null;
   storeIds: string[];
+  cityIds: string[];
   channel: string | null;
   category: string | null;
   period: Period;
@@ -37,6 +38,9 @@ export function parseFilters(params: SearchParams): ParsedFilters {
   const storesRaw = getString(params, "stores");
   const storeIds = storesRaw ? storesRaw.split(",").filter(Boolean) : [];
 
+  const cityRaw = getString(params, "city");
+  const cityIds = cityRaw ? cityRaw.split(",").filter(Boolean) : [];
+
   const compareRaw = getString(params, "compare");
   const compare: ComparisonMode =
     compareRaw === "previous_period" || compareRaw === "previous_year" ? compareRaw : "none";
@@ -44,6 +48,7 @@ export function parseFilters(params: SearchParams): ParsedFilters {
   return {
     brandId: getString(params, "brand") ?? null,
     storeIds,
+    cityIds,
     channel: getString(params, "channel") ?? null,
     category: getString(params, "category") ?? null,
     period,

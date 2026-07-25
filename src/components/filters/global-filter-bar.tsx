@@ -17,6 +17,7 @@ import type { PeriodPreset } from "@/lib/dates/period";
 export type FilterField =
   | "brand"
   | "stores"
+  | "city"
   | "channel"
   | "period"
   | "compare"
@@ -40,8 +41,10 @@ export function GlobalFilterBar({
   brands = [],
   stores = [],
   categories = [],
+  cities = [],
   currentBrandId,
   currentStoreIds = [],
+  currentCityIds = [],
   currentChannel,
   currentPeriodPreset,
   currentFrom,
@@ -56,8 +59,10 @@ export function GlobalFilterBar({
   brands?: Option[];
   stores?: Option[];
   categories?: Option[];
+  cities?: Option[];
   currentBrandId: string | null;
   currentStoreIds?: string[];
+  currentCityIds?: string[];
   currentChannel?: string | null;
   currentPeriodPreset?: PeriodPreset;
   currentFrom?: string;
@@ -89,6 +94,12 @@ export function GlobalFilterBar({
     for (const storeId of currentStoreIds) {
       const store = stores.find((s) => s.id === storeId);
       if (store) chips.push({ paramKey: "stores", removeValue: storeId, label: `Loja: ${store.name}` });
+    }
+  }
+  if (fields.includes("city")) {
+    for (const cityId of currentCityIds) {
+      const city = cities.find((c) => c.id === cityId);
+      if (city) chips.push({ paramKey: "city", removeValue: cityId, label: `Cidade: ${city.name}` });
     }
   }
   if (fields.includes("category") && currentCategoryId) {
@@ -128,6 +139,16 @@ export function GlobalFilterBar({
             selected={currentStoreIds}
             placeholder="Lojas"
             searchPlaceholder="Buscar loja..."
+            onNavigateStart={() => setPending(true)}
+          />
+        )}
+        {fields.includes("city") && (
+          <MultiSelectFilter
+            paramKey="city"
+            options={cities.map((c) => ({ value: c.id, label: c.name }))}
+            selected={currentCityIds}
+            placeholder="Cidade"
+            searchPlaceholder="Buscar cidade..."
             onNavigateStart={() => setPending(true)}
           />
         )}
