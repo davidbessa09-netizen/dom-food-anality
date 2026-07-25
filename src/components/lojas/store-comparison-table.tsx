@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ArrowDown, ArrowUp, ArrowUpDown, Columns3, Download, Rows3 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatDateTimeBR } from "@/lib/dates/format";
 import type { StoreDataStatus } from "@/lib/metrics/store-comparison";
 
 export interface StoreComparisonRow {
@@ -135,7 +136,7 @@ const COLUMNS: ColumnDef[] = [
     align: "left",
     defaultVisible: true,
     sortValue: (r) => r.lastSyncedAt ?? "",
-    csvValue: (r) => (r.lastSyncedAt ? new Date(r.lastSyncedAt).toLocaleString("pt-BR") : "nunca"),
+    csvValue: (r) => (r.lastSyncedAt ? formatDateTimeBR(r.lastSyncedAt) : "nunca"),
     render: (r) => <span className="whitespace-nowrap text-xs">{timeAgo(r.lastSyncedAt)}</span>,
   },
   {

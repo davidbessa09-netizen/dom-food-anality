@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser, hasWriteAccess } from "@/lib/auth/session";
 import { logAudit } from "@/lib/audit/log";
+import { formatDateBR } from "@/lib/dates/format";
 
 export interface AnonymizeResult {
   ok: boolean;
@@ -181,7 +182,7 @@ export async function exportCustomersCsv(params: ExportCustomersParams) {
 
   const header = ["Cliente", "Telefone", "Cliente desde"].map(csvField).join(";");
   const lines = (data ?? []).map((c) =>
-    [c.full_name ?? "Não identificado", c.phone_masked ?? "—", c.first_seen_at ? new Date(c.first_seen_at).toLocaleDateString("pt-BR") : "—"]
+    [c.full_name ?? "Não identificado", c.phone_masked ?? "—", c.first_seen_at ? formatDateBR(c.first_seen_at) : "—"]
       .map(csvField)
       .join(";")
   );

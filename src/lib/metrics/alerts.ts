@@ -3,6 +3,8 @@
 // última sincronização falhou, mostramos a mensagem de erro registrada, nunca
 // um motivo inventado.
 
+import { formatDateTimeBR } from "@/lib/dates/format";
+
 export type AlertSeverity = "alta" | "media";
 
 export interface SyncAlert {
@@ -71,7 +73,7 @@ export function buildSyncAlerts(params: {
           id: `stale-${integration.integrationId}`,
           severity: diffMinutes > staleThresholdMinutes * 2 ? "alta" : "media",
           title: `${integration.label}: sem sincronizar há ${formatDuration(diffMinutes)}`,
-          description: `Última sincronização bem-sucedida em ${new Date(integration.lastSyncedAt).toLocaleString("pt-BR")}.`,
+          description: `Última sincronização bem-sucedida em ${formatDateTimeBR(integration.lastSyncedAt)}.`,
         });
       }
     }

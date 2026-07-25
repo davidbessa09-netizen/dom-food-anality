@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { ChevronDown, ChevronUp } from "lucide-react";
+import { formatDateTimeBR } from "@/lib/dates/format";
 
 export interface TransactionItem {
   name: string;
@@ -38,7 +39,7 @@ function formatCurrency(value: number | null) {
 }
 
 function formatDateCompact(iso: string) {
-  return new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  return formatDateTimeBR(iso, { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
 function itemsSummary(items: TransactionItem[]) {

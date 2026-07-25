@@ -20,6 +20,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/auth/session";
 import { isPeriodPreset, previousPeriod, resolveCustomPeriod, resolvePeriod, type PeriodPreset } from "@/lib/dates/period";
+import { formatDayLabel, formatDateTimeBR } from "@/lib/dates/format";
 import { PeriodSelect } from "@/components/dashboard/period-select";
 import { BrandSelect } from "@/components/dashboard/brand-select";
 import { DateRangePicker } from "@/components/dashboard/date-range-picker";
@@ -375,7 +376,7 @@ export default async function ExecutiveDashboardPage({
   const deliveryFeesPrev = deliveryFeesTotal(previousOrders);
 
   const revenueByDay = salesByDay(currentOrders).map((r) => ({
-    label: new Date(`${r.date}T00:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
+    label: formatDayLabel(r.date),
     revenue: r.revenue,
     orders: r.orders,
   }));
@@ -769,7 +770,7 @@ export default async function ExecutiveDashboardPage({
               {recentOrders.map((order) => (
                 <TableRow key={order.id}>
                   <TableCell className="whitespace-nowrap text-xs">
-                    {new Date(order.ordered_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                    {formatDateTimeBR(order.ordered_at, { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
                   </TableCell>
                   <TableCell className="whitespace-nowrap">{order.customers?.full_name ?? "Não identificado"}</TableCell>
                   <TableCell className="max-w-xs truncate text-xs">

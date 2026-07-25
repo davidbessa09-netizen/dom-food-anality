@@ -4,6 +4,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/auth/session";
 import { SyncLogViewer } from "../integracoes/sync-log-viewer";
+import { formatDateTimeBR } from "@/lib/dates/format";
 import type { Brand, Store } from "@/types/database";
 
 const STATUS_LABELS: Record<string, string> = {
@@ -139,7 +140,7 @@ export default async function SyncHistoryPage() {
               {(syncJobs ?? []).map((job) => (
                 <TableRow key={job.id}>
                   <TableCell className="whitespace-nowrap text-sm">{labelFor(job.integration_id)}</TableCell>
-                  <TableCell className="whitespace-nowrap text-xs">{new Date(job.started_at).toLocaleString("pt-BR")}</TableCell>
+                  <TableCell className="whitespace-nowrap text-xs">{formatDateTimeBR(job.started_at)}</TableCell>
                   <TableCell className="text-xs text-muted-foreground">{job.trigger}</TableCell>
                   <TableCell>
                     <Badge variant={statusVariant(job.status)}>{STATUS_LABELS[job.status] ?? job.status}</Badge>

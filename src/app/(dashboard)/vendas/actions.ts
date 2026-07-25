@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { formatPaymentMethod } from "@/lib/format/payment-method";
+import { formatDateTimeBR } from "@/lib/dates/format";
 
 const EXPORT_ROW_CAP = 5000;
 
@@ -84,7 +85,7 @@ export async function exportTransactionsCsv(params: ExportTransactionsParams) {
   const lines = rows.map((o) => {
     const customer = Array.isArray(o.customers) ? o.customers[0] : o.customers;
     return [
-      new Date(o.ordered_at).toLocaleString("pt-BR"),
+      formatDateTimeBR(o.ordered_at),
       o.status,
       o.fulfillment_type,
       o.source_platform,

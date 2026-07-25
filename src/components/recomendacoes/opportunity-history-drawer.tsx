@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2 } from "lucide-react";
 import { addOpportunityNote, getOpportunityHistory, type OpportunityHistoryEntry, type OpportunityNoteEntry } from "@/app/(dashboard)/recomendacoes/actions";
+import { formatDateTimeBR } from "@/lib/dates/format";
 
 const EVENT_LABELS: Record<string, string> = {
   created: "Oportunidade criada",
@@ -18,7 +19,7 @@ const EVENT_LABELS: Record<string, string> = {
 };
 
 function formatDateTime(iso: string) {
-  return new Date(iso).toLocaleString("pt-BR");
+  return formatDateTimeBR(iso);
 }
 
 export function OpportunityHistoryDrawer({

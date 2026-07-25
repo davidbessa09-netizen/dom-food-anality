@@ -16,6 +16,7 @@ import {
 import { MoreHorizontal, Pencil, Power, Trash2 } from "lucide-react";
 import { toggleProductActive, deleteProduct } from "@/app/(dashboard)/produtos/actions";
 import { ProductDrawer, type ProductDrawerProduct } from "./product-drawer";
+import { formatDateBR } from "@/lib/dates/format";
 import type { Brand, Category } from "@/types/database";
 
 export interface CatalogRow {
@@ -41,7 +42,7 @@ function formatCurrency(value: number | null) {
 
 function formatDate(iso: string | null) {
   if (!iso) return "Nunca";
-  return new Date(iso).toLocaleDateString("pt-BR");
+  return formatDateBR(iso);
 }
 
 export function CatalogTable({ products, brands, categories }: { products: CatalogRow[]; brands: Brand[]; categories: Category[] }) {

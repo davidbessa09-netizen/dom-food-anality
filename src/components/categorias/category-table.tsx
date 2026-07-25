@@ -17,6 +17,7 @@ import { ArrowDown, ArrowUp, ArrowUpDown, MoreHorizontal, Pencil, Sparkles, Tras
 import { deleteCategory, listCategoryProducts, normalizeCategoryName } from "@/app/(dashboard)/categorias/actions";
 import { CategoryEditDialog } from "./category-edit-dialog";
 import { MoveProductsDrawer, type MoveProductOption } from "./move-products-drawer";
+import { formatDateBR } from "@/lib/dates/format";
 
 export interface CategoryRow {
   id: string;
@@ -41,7 +42,7 @@ function formatCurrency(value: number) {
 
 function formatDate(iso: string | null) {
   if (!iso) return "Nunca";
-  return new Date(iso).toLocaleDateString("pt-BR");
+  return formatDateBR(iso);
 }
 
 function statusFor(row: CategoryRow): { label: string; variant: "default" | "secondary" | "outline" } {

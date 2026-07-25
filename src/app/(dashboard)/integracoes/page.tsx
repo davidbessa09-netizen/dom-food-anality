@@ -6,6 +6,7 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { CredentialForm } from "./credential-form";
 import { SyncButton } from "./sync-button";
 import { SyncLogViewer } from "./sync-log-viewer";
+import { formatDateTimeBR } from "@/lib/dates/format";
 import type { Brand, Store } from "@/types/database";
 
 interface SalesChannelRow {
@@ -162,7 +163,7 @@ export default async function IntegrationsPage() {
                   </p>
                   <p className="text-xs text-muted-foreground">
                     {integration.last_synced_at
-                      ? `Última sincronização: ${new Date(integration.last_synced_at).toLocaleString("pt-BR")}`
+                      ? `Última sincronização: ${formatDateTimeBR(integration.last_synced_at)}`
                       : "Nunca sincronizado"}
                   </p>
                 </div>
@@ -191,7 +192,7 @@ export default async function IntegrationsPage() {
             <TableBody>
               {(syncJobs ?? []).map((job) => (
                 <TableRow key={job.id}>
-                  <TableCell className="text-xs">{new Date(job.started_at).toLocaleString("pt-BR")}</TableCell>
+                  <TableCell className="text-xs">{formatDateTimeBR(job.started_at)}</TableCell>
                   <TableCell>
                     <Badge variant={statusVariant(job.status)}>{STATUS_LABELS[job.status] ?? job.status}</Badge>
                   </TableCell>

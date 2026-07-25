@@ -5,6 +5,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Badge } from "@/components/ui/badge";
 import { Loader2 } from "lucide-react";
 import { getCustomerHistory, type CustomerHistoryOrder } from "@/app/(dashboard)/clientes/actions";
+import { formatDateBR } from "@/lib/dates/format";
 
 function formatCurrency(value: number) {
   return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -12,7 +13,7 @@ function formatCurrency(value: number) {
 
 function formatDate(iso: string | null) {
   if (!iso) return "—";
-  return new Date(iso).toLocaleDateString("pt-BR");
+  return formatDateBR(iso);
 }
 
 export function CustomerHistoryDrawer({

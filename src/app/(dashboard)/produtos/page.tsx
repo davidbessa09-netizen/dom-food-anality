@@ -26,6 +26,7 @@ import { buildAbcCurve, topNConcentration } from "@/lib/metrics/abc-curve";
 import { classifyLowPerformers, type AllTimeSalesInfo } from "@/lib/metrics/product-performance";
 import { findDuplicateProducts } from "@/lib/metrics/data-quality";
 import { salesByDay } from "@/lib/metrics/sales-timeseries";
+import { formatDayLabel } from "@/lib/dates/format";
 import type { Brand, Category, Product } from "@/types/database";
 import type { LowPerformerRow } from "@/lib/metrics/product-performance";
 
@@ -308,7 +309,7 @@ async function OverviewTab({
     .sort((a, b) => b.revenue - a.revenue);
 
   const byDay = salesByDay(ordersInPeriodTyped).map((r) => ({
-    label: new Date(`${r.date}T00:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
+    label: formatDayLabel(r.date),
     revenue: r.revenue,
     orders: r.orders,
   }));

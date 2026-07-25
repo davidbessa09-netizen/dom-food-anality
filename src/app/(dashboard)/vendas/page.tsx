@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { GlobalFilterBar } from "@/components/filters/global-filter-bar";
 import { parseFilters } from "@/lib/filters/parse";
 import { previousPeriod } from "@/lib/dates/period";
+import { formatDayLabel } from "@/lib/dates/format";
 import { PageTabs } from "@/components/vendas/page-tabs";
 import { KpiCard } from "@/components/dashboard/kpi-card";
 import { RevenueOrdersChart } from "@/components/charts/revenue-orders-chart";
@@ -207,7 +208,7 @@ async function AnalysisTab({
   const deliveryFeesPrev = deliveryFeesTotal(previousOrders);
 
   const byDay = salesByDay(currentOrders).map((r) => ({
-    label: new Date(`${r.date}T00:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
+    label: formatDayLabel(r.date),
     revenue: r.revenue,
     orders: r.orders,
   }));

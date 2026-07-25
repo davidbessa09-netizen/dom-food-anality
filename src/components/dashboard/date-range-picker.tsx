@@ -8,6 +8,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { formatDateInputBR } from "@/lib/dates/format";
 
 function toDateInputValue(date: Date): string {
   const y = date.getFullYear();
@@ -37,10 +38,7 @@ export function DateRangePicker({ from, to }: { from?: string; to?: string }) {
     }
   }
 
-  const label =
-    from && to
-      ? `${new Date(`${from}T00:00:00`).toLocaleDateString("pt-BR")} – ${new Date(`${to}T00:00:00`).toLocaleDateString("pt-BR")}`
-      : "Intervalo personalizado";
+  const label = from && to ? `${formatDateInputBR(from)} – ${formatDateInputBR(to)}` : "Intervalo personalizado";
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
