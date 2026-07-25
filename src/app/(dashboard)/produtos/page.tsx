@@ -5,11 +5,8 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/auth/session";
 import { ProductForm } from "./product-form";
 import { ProductsTable } from "./products-table";
-import { BrandSelect } from "@/components/dashboard/brand-select";
-import { CategorySelect } from "@/components/dashboard/category-select";
-import { PeriodSelect } from "@/components/dashboard/period-select";
-import { DateRangePicker } from "@/components/dashboard/date-range-picker";
-import { isPeriodPreset, resolveCustomPeriod, resolvePeriod, type PeriodPreset } from "@/lib/dates/period";
+import { GlobalFilterBar } from "@/components/filters/global-filter-bar";
+import { parseFilters } from "@/lib/filters/parse";
 import {
   buildProductRanking,
   daysSinceLastSale,
@@ -31,13 +28,10 @@ export default async function ProductsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = await searchParams;
-  const rawPeriod = typeof params.period === "string" ? params.period : "30d";
-  const preset: PeriodPreset = isPeriodPreset(rawPeriod) ? rawPeriod : "30d";
-  const selectedBrandId = typeof params.brand === "string" ? params.brand : null;
-  const selectedCategoryId = typeof params.category === "string" ? params.category : null;
-  const customFrom = typeof params.from === "string" ? params.from : undefined;
-  const customTo = typeof params.to === "string" ? params.to : undefined;
-  const period = customFrom && customTo ? resolveCustomPeriod(customFrom, customTo) : resolvePeriod(preset);
+  const filters = parseFilters(params);
+  const { period, periodPreset: preset, customFrom, customTo } = filters;
+  const selectedBrandId = filters.brandId;
+  const selectedCategoryId = filters.category;
 
   const user = await getCurrentUser();
   const supabase = await createClient();
@@ -75,18 +69,24 @@ export default async function ProductsPage({
 
   const { data: stores } = await supabase
     .from("stores")
-    .select("id")
+    .select("id, name")
     .in("brand_id", brandIds.length ? brandIds : fallback);
 
-  const storeIds = (stores ?? []).map((s) => s.id);
-  const storeFallback = storeIds.length ? storeIds : fallback;
+  const allStoreIds = (stores ?? []).map((s) => s.id);
+  const selectedStoreIds = filters.storeIds.filter((id) => allStoreIds.includes(id));
+  const scopedStoreIds = selectedStoreIds.length > 0 ? selectedStoreIds : allStoreIds;
+  const storeFallback = scopedStoreIds.length ? scopedStoreIds : fallback;
 
-  const { data: ordersInPeriod } = await supabase
+  let ordersInPeriodQuery = supabase
     .from("orders")
     .select("id, status, ordered_at, order_items(original_name, quantity, total_price, is_addon)")
     .in("store_id", storeFallback)
     .gte("ordered_at", period.start.toISOString())
     .lte("ordered_at", period.end.toISOString());
+  if (filters.channel) ordersInPeriodQuery = ordersInPeriodQuery.eq("source_platform", filters.channel);
+  if (filters.status) ordersInPeriodQuery = ordersInPeriodQuery.eq("status", filters.status);
+  if (filters.fulfillment) ordersInPeriodQuery = ordersInPeriodQuery.eq("fulfillment_type", filters.fulfillment);
+  const { data: ordersInPeriod } = await ordersInPeriodQuery;
 
   interface OrderWithItems {
     id: string;
@@ -107,7 +107,7 @@ export default async function ProductsPage({
       }))
   );
 
-  const { data: detailedOrdersRaw } = await supabase
+  let detailedOrdersQuery = supabase
     .from("orders")
     .select(
       "id, ordered_at, gross_amount, payment_method, status, customers(full_name, phone_masked), order_items(original_name, quantity, is_addon)"
@@ -117,6 +117,10 @@ export default async function ProductsPage({
     .lte("ordered_at", period.end.toISOString())
     .order("ordered_at", { ascending: false })
     .limit(100);
+  if (filters.channel) detailedOrdersQuery = detailedOrdersQuery.eq("source_platform", filters.channel);
+  if (filters.status) detailedOrdersQuery = detailedOrdersQuery.eq("status", filters.status);
+  if (filters.fulfillment) detailedOrdersQuery = detailedOrdersQuery.eq("fulfillment_type", filters.fulfillment);
+  const { data: detailedOrdersRaw } = await detailedOrdersQuery;
 
   interface DetailedOrderRow {
     id: string;
@@ -154,16 +158,23 @@ export default async function ProductsPage({
             nome original, antes de qualquer correspondência entre plataformas).
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <BrandSelect brands={(brands ?? []).map((b) => ({ id: b.id, name: b.name }))} current={selectedBrandId} />
-          <CategorySelect
-            categories={(categories ?? []).map((c) => ({ id: c.id, name: c.canonical_name }))}
-            current={validSelectedCategoryId}
-          />
-          <PeriodSelect current={preset} />
-          <DateRangePicker from={customFrom} to={customTo} />
-        </div>
       </div>
+
+      <GlobalFilterBar
+        fields={["brand", "stores", "channel", "category", "period", "status", "fulfillment"]}
+        brands={(brands ?? []).map((b) => ({ id: b.id, name: b.name }))}
+        stores={(stores ?? []).map((s) => ({ id: s.id, name: s.name }))}
+        categories={(categories ?? []).map((c) => ({ id: c.id, name: c.canonical_name }))}
+        currentBrandId={selectedBrandId}
+        currentStoreIds={selectedStoreIds}
+        currentChannel={filters.channel}
+        currentPeriodPreset={preset}
+        currentFrom={customFrom}
+        currentTo={customTo}
+        currentStatus={filters.status}
+        currentFulfillment={filters.fulfillment}
+        currentCategoryId={validSelectedCategoryId}
+      />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>

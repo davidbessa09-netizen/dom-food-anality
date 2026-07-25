@@ -1034,3 +1034,23 @@ create policy delivery_zones_select on delivery_zones for select
 create policy delivery_zones_write on delivery_zones for all
   using (public.user_can_write_store(store_id))
   with check (public.user_can_write_store(store_id));
+
+-- Suporte a "Salvar visão" no sistema global de filtros (ver migration
+-- 0010_saved_views.sql) — dado pessoal do usuário, escopado só a quem criou.
+create table saved_views (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  path text not null,
+  name text not null,
+  params jsonb not null,
+  created_at timestamptz not null default now()
+);
+
+alter table saved_views enable row level security;
+
+create policy saved_views_select on saved_views for select
+  using (user_id = auth.uid());
+
+create policy saved_views_write on saved_views for all
+  using (user_id = auth.uid())
+  with check (user_id = auth.uid());
