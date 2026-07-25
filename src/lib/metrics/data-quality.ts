@@ -27,3 +27,30 @@ export function findDuplicateCategories(categories: CategoryInput[]): DuplicateC
 
   return Array.from(byKey.values()).filter((g) => g.ids.length > 1);
 }
+
+export interface ProductInput {
+  id: string;
+  brand_id: string;
+  canonical_name: string;
+}
+
+export interface DuplicateProductGroup {
+  brandId: string;
+  name: string;
+  ids: string[];
+}
+
+/** Produtos com o mesmo nome canônico (case-insensitive) dentro da mesma
+ * marca — mesmo critério de findDuplicateCategories, aplicado a produtos. */
+export function findDuplicateProducts(products: ProductInput[]): DuplicateProductGroup[] {
+  const byKey = new Map<string, DuplicateProductGroup>();
+
+  for (const p of products) {
+    const key = `${p.brand_id}||${p.canonical_name.trim().toLowerCase()}`;
+    const existing = byKey.get(key);
+    if (existing) existing.ids.push(p.id);
+    else byKey.set(key, { brandId: p.brand_id, name: p.canonical_name, ids: [p.id] });
+  }
+
+  return Array.from(byKey.values()).filter((g) => g.ids.length > 1);
+}

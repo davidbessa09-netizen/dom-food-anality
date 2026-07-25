@@ -20,12 +20,22 @@ export interface ProductRankingRow {
   lastSoldAt: string;
 }
 
-/** Agrupa itens de pedidos CONCLUÍDOS por nome, somando quantidade e faturamento. */
-export function buildProductRanking(items: ProductOrderItemInput[]): ProductRankingRow[] {
+export type RankingItemType = "principal" | "adicional" | "all";
+
+/** Agrupa itens de pedidos CONCLUÍDOS por nome, somando quantidade e faturamento.
+ * `itemType` por padrão só considera itens principais (mantém o comportamento
+ * histórico de todas as telas que já chamavam esta função) — "adicional" ou
+ * "all" são usados pelo filtro "adicional vs. produto principal" de /produtos. */
+export function buildProductRanking(
+  items: ProductOrderItemInput[],
+  itemType: RankingItemType = "principal"
+): ProductRankingRow[] {
   const byName = new Map<string, ProductRankingRow>();
 
   for (const item of items) {
-    if (item.order_status !== "concluido" || item.is_addon) continue;
+    if (item.order_status !== "concluido") continue;
+    if (itemType === "principal" && item.is_addon) continue;
+    if (itemType === "adicional" && !item.is_addon) continue;
 
     const existing = byName.get(item.original_name);
     if (existing) {
@@ -68,4 +78,18 @@ export function findProductsWithoutSales(
 export function daysSinceLastSale(lastSoldAt: string, now: string): number {
   const diffMs = new Date(now).getTime() - new Date(lastSoldAt).getTime();
   return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+}
+
+/** Itens principais (sem adicional) por pedido concluído — null quando não há
+ * pedido concluído com item principal no recorte (evita 0/0). */
+export function averageItemsPerOrder(
+  orders: { status: string; items: { quantity: number; is_addon?: boolean }[] }[]
+): number | null {
+  const completed = orders.filter((o) => o.status === "concluido" && o.items.some((i) => !i.is_addon));
+  if (completed.length === 0) return null;
+  const totalQuantity = completed.reduce(
+    (sum, o) => sum + o.items.filter((i) => !i.is_addon).reduce((s, i) => s + i.quantity, 0),
+    0
+  );
+  return totalQuantity / completed.length;
 }

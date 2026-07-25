@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  averageItemsPerOrder,
   buildProductRanking,
   daysSinceLastSale,
   findProductsWithoutSales,
@@ -67,5 +68,33 @@ describe("findProductsWithoutSales", () => {
 describe("daysSinceLastSale", () => {
   it("calcula a diferença em dias inteiros", () => {
     expect(daysSinceLastSale("2026-07-01T00:00:00Z", "2026-07-10T00:00:00Z")).toBe(9);
+  });
+});
+
+describe("buildProductRanking com itemType", () => {
+  it("'adicional' considera só itens marcados como adicional", () => {
+    const rows = buildProductRanking(items, "adicional");
+    expect(rows.map((r) => r.name)).toEqual(["Molho extra"]);
+  });
+
+  it("'all' inclui principais e adicionais juntos", () => {
+    const rows = buildProductRanking(items, "all");
+    expect(rows.map((r) => r.name).sort()).toEqual(["Combo Chef", "Molho extra", "Temaki Salmão"]);
+  });
+});
+
+describe("averageItemsPerOrder", () => {
+  it("calcula itens principais por pedido concluído", () => {
+    const avg = averageItemsPerOrder([
+      { status: "concluido", items: [{ quantity: 2 }, { quantity: 1, is_addon: true }] },
+      { status: "concluido", items: [{ quantity: 4 }] },
+      { status: "cancelado", items: [{ quantity: 10 }] },
+    ]);
+    expect(avg).toBe(3); // (2 + 4) / 2 pedidos concluídos com item principal
+  });
+
+  it("retorna null quando não há pedido concluído com item principal", () => {
+    expect(averageItemsPerOrder([{ status: "concluido", items: [{ quantity: 1, is_addon: true }] }])).toBeNull();
+    expect(averageItemsPerOrder([])).toBeNull();
   });
 });

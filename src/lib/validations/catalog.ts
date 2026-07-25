@@ -23,3 +23,14 @@ export const createProductSchema = z.object({
     .optional(),
 });
 export type CreateProductInput = z.infer<typeof createProductSchema>;
+
+export const updateProductSchema = z.object({
+  id: uuidLike("Produto inválido"),
+  category_id: uuidLike("Categoria inválida").optional().or(z.literal("")),
+  canonical_name: z.string().min(2, "Nome muito curto"),
+  current_price: z
+    .preprocess((v) => (v === "" || v === undefined ? undefined : Number(v)), z.number().nonnegative())
+    .optional(),
+  is_active: z.boolean(),
+});
+export type UpdateProductInput = z.infer<typeof updateProductSchema>;
