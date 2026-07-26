@@ -2,33 +2,101 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { bestMatch } from "@/lib/products/similarity";
-import { findOrCreateCategory } from "@/lib/integrations/persist-product";
+import { getCurrentUser } from "@/lib/auth/session";
+import { logAudit } from "@/lib/audit/log";
+import { bestMatchWithCategory, isSafeForBulkResolution, type CandidateProductWithCategory } from "@/lib/products/category-aware-match";
 
-/** Acima deste score (Jaccard de tokens), o vínculo é considerado seguro o
- * suficiente para aprovação em lote sem revisão humana item a item. */
+/** Acima deste score (Jaccard de tokens) E sem divergência conhecida de
+ * categoria, o vínculo é considerado seguro o suficiente pra resolução em
+ * lote sem revisão individual (ver category-aware-match.ts). */
 const BULK_MATCH_THRESHOLD = 0.85;
 
-export async function approveVariantMatch(variantId: string, productId: string) {
+export interface VariantActionResult {
+  ok: boolean;
+  error?: string;
+  /** Estado anterior da variante — usado pelo botão "Desfazer" (toast). */
+  previousState?: { matchStatus: string; productId: string | null };
+  /** Preenchido só quando a ação criou um produto novo (pra permitir
+   * desfazer também apagar o produto, se nada mais o referenciar). */
+  createdProductId?: string;
+}
+
+async function getVariantOrgId(supabase: Awaited<ReturnType<typeof createClient>>, variantId: string): Promise<string | null> {
+  const { data } = await supabase
+    .from("product_variants")
+    .select("sales_channels(stores(brands(organization_id)))")
+    .eq("id", variantId)
+    .maybeSingle();
+  const channel = data ? (Array.isArray(data.sales_channels) ? data.sales_channels[0] : data.sales_channels) : null;
+  const store = channel ? (Array.isArray(channel.stores) ? channel.stores[0] : channel.stores) : null;
+  const brand = store ? (Array.isArray(store.brands) ? store.brands[0] : store.brands) : null;
+  return brand?.organization_id ?? null;
+}
+
+export async function approveVariantMatch(variantId: string, productId: string): Promise<VariantActionResult> {
   const supabase = await createClient();
+  const user = await getCurrentUser();
+
+  const { data: before } = await supabase.from("product_variants").select("match_status, product_id").eq("id", variantId).maybeSingle();
+
   const { error } = await supabase
     .from("product_variants")
     .update({ product_id: productId, match_status: "aprovado" })
     .eq("id", variantId);
 
+  if (!error) {
+    const orgId = await getVariantOrgId(supabase, variantId);
+    if (orgId) {
+      await logAudit(supabase, {
+        organizationId: orgId,
+        actorUserId: user?.id ?? null,
+        action: "approve_variant_match",
+        entityType: "product_variant",
+        entityId: variantId,
+        metadata: { product_id: productId },
+      });
+    }
+  }
+
   revalidatePath("/correspondencia-produtos");
-  return { ok: !error, error: error?.message };
+  revalidatePath("/produtos");
+  return {
+    ok: !error,
+    error: error?.message,
+    previousState: before ? { matchStatus: before.match_status, productId: before.product_id } : undefined,
+  };
 }
 
-export async function rejectVariantMatch(variantId: string) {
+export async function rejectVariantMatch(variantId: string): Promise<VariantActionResult> {
   const supabase = await createClient();
+  const user = await getCurrentUser();
+
+  const { data: before } = await supabase.from("product_variants").select("match_status, product_id").eq("id", variantId).maybeSingle();
+
   const { error } = await supabase
     .from("product_variants")
     .update({ match_status: "rejeitado", product_id: null })
     .eq("id", variantId);
 
+  if (!error) {
+    const orgId = await getVariantOrgId(supabase, variantId);
+    if (orgId) {
+      await logAudit(supabase, {
+        organizationId: orgId,
+        actorUserId: user?.id ?? null,
+        action: "reject_variant_match",
+        entityType: "product_variant",
+        entityId: variantId,
+      });
+    }
+  }
+
   revalidatePath("/correspondencia-produtos");
-  return { ok: !error, error: error?.message };
+  return {
+    ok: !error,
+    error: error?.message,
+    previousState: before ? { matchStatus: before.match_status, productId: before.product_id } : undefined,
+  };
 }
 
 export async function createProductFromVariant(
@@ -37,8 +105,11 @@ export async function createProductFromVariant(
   canonicalName: string,
   categoryId?: string | null,
   currentPrice?: number | null
-) {
+): Promise<VariantActionResult> {
   const supabase = await createClient();
+  const user = await getCurrentUser();
+
+  const { data: before } = await supabase.from("product_variants").select("match_status, product_id").eq("id", variantId).maybeSingle();
 
   const { data: product, error: productError } = await supabase
     .from("products")
@@ -60,9 +131,78 @@ export async function createProductFromVariant(
     .update({ product_id: product.id, match_status: "aprovado" })
     .eq("id", variantId);
 
+  if (!variantError) {
+    const orgId = await getVariantOrgId(supabase, variantId);
+    if (orgId) {
+      await logAudit(supabase, {
+        organizationId: orgId,
+        actorUserId: user?.id ?? null,
+        action: "create_product_from_variant",
+        entityType: "product_variant",
+        entityId: variantId,
+        metadata: { product_id: product.id, canonical_name: canonicalName },
+      });
+    }
+  }
+
   revalidatePath("/correspondencia-produtos");
   revalidatePath("/produtos");
-  return { ok: !variantError, error: variantError?.message };
+  revalidatePath("/categorias");
+  return {
+    ok: !variantError,
+    error: variantError?.message,
+    previousState: before ? { matchStatus: before.match_status, productId: before.product_id } : undefined,
+    createdProductId: product.id as string,
+  };
+}
+
+/**
+ * Desfaz aprovar/rejeitar/criar — restaura o status/vínculo anterior da
+ * variante. Quando a ação original criou um produto (createdProductId
+ * informado), também apaga esse produto, mas só se nenhuma OUTRA variante
+ * ainda apontar pra ele (tecnicamente seguro: nada mais depende dele).
+ */
+export async function undoVariantAction(
+  variantId: string,
+  previousState: { matchStatus: string; productId: string | null },
+  createdProductId?: string
+): Promise<{ ok: boolean; error?: string }> {
+  const supabase = await createClient();
+  const user = await getCurrentUser();
+
+  const { error } = await supabase
+    .from("product_variants")
+    .update({ match_status: previousState.matchStatus, product_id: previousState.productId })
+    .eq("id", variantId);
+
+  if (error) return { ok: false, error: error.message };
+
+  if (createdProductId) {
+    const { count } = await supabase
+      .from("product_variants")
+      .select("id", { count: "exact", head: true })
+      .eq("product_id", createdProductId);
+    if ((count ?? 0) === 0) {
+      await supabase.from("products").delete().eq("id", createdProductId);
+    }
+  }
+
+  const orgId = await getVariantOrgId(supabase, variantId);
+  if (orgId) {
+    await logAudit(supabase, {
+      organizationId: orgId,
+      actorUserId: user?.id ?? null,
+      action: "undo_variant_action",
+      entityType: "product_variant",
+      entityId: variantId,
+      metadata: { restored_status: previousState.matchStatus, deleted_product_id: createdProductId ?? null },
+    });
+  }
+
+  revalidatePath("/correspondencia-produtos");
+  revalidatePath("/produtos");
+  revalidatePath("/categorias");
+  return { ok: true };
 }
 
 interface PendingVariantRow {
@@ -72,27 +212,22 @@ interface PendingVariantRow {
   sales_channels: { stores: { brand_id: string } | null } | null;
 }
 
-interface CandidateProduct {
-  id: string;
-  canonical_name: string;
-}
-
 export interface BulkResolveResult {
   linked: number;
-  created: number;
-  failed: number;
+  skipped: number;
   total: number;
 }
 
 /**
- * Resolve todas as variantes pendentes de uma vez: vincula a um produto
- * existente quando a similaridade de nome é alta (>= BULK_MATCH_THRESHOLD),
- * senão cria um novo produto canônico a partir do nome original. Nunca
- * vincula com baixa confiança — nesse caso sempre cria um produto novo, que
- * o usuário pode depois mesclar manualmente se for duplicata.
+ * Resolve em lote SÓ os casos seguros: score de similaridade acima do
+ * limite E sem divergência conhecida de categoria (ver
+ * isSafeForBulkResolution). Nunca cria produto novo em lote — criar um
+ * produto é uma decisão que fica pra revisão individual. Casos não seguros
+ * continuam pendentes.
  */
-export async function bulkResolveVariants(): Promise<BulkResolveResult> {
+export async function bulkResolveSafeMatches(): Promise<BulkResolveResult> {
   const supabase = await createClient();
+  const user = await getCurrentUser();
 
   const { data: pendingVariants } = await supabase
     .from("product_variants")
@@ -101,7 +236,7 @@ export async function bulkResolveVariants(): Promise<BulkResolveResult> {
     .returns<PendingVariantRow[]>();
 
   if (!pendingVariants || pendingVariants.length === 0) {
-    return { linked: 0, created: 0, failed: 0, total: 0 };
+    return { linked: 0, skipped: 0, total: 0 };
   }
 
   const brandIds = [
@@ -110,76 +245,72 @@ export async function bulkResolveVariants(): Promise<BulkResolveResult> {
 
   const { data: existingProducts } = await supabase
     .from("products")
-    .select("id, brand_id, canonical_name")
-    .in("brand_id", brandIds);
+    .select("id, brand_id, canonical_name, category_id, categories(canonical_name)")
+    .in("brand_id", brandIds.length ? brandIds : ["00000000-0000-0000-0000-000000000000"]);
 
-  const productsByBrand = new Map<string, CandidateProduct[]>();
-  for (const p of existingProducts ?? []) {
+  interface ProductJoinRow {
+    id: string;
+    brand_id: string;
+    canonical_name: string;
+    category_id: string | null;
+    categories: { canonical_name: string } | { canonical_name: string }[] | null;
+  }
+
+  const productsByBrand = new Map<string, CandidateProductWithCategory[]>();
+  for (const p of (existingProducts ?? []) as unknown as ProductJoinRow[]) {
+    const category = Array.isArray(p.categories) ? p.categories[0] : p.categories;
     const list = productsByBrand.get(p.brand_id) ?? [];
-    list.push({ id: p.id, canonical_name: p.canonical_name });
+    list.push({ id: p.id, canonical_name: p.canonical_name, category_name: category?.canonical_name ?? null });
     productsByBrand.set(p.brand_id, list);
   }
 
   let linked = 0;
-  let created = 0;
-  let failed = 0;
+  let skipped = 0;
+  const linkedVariantIds: string[] = [];
 
   for (const variant of pendingVariants) {
     const brandId = variant.sales_channels?.stores?.brand_id;
     if (!brandId) {
-      failed++;
+      skipped++;
       continue;
     }
 
     const candidates = productsByBrand.get(brandId) ?? [];
-    const match = bestMatch(variant.original_name, candidates, (p) => p.canonical_name);
+    const suggestion = bestMatchWithCategory(variant.original_name, variant.raw_payload?.category_name ?? null, candidates);
 
-    if (match && match.score >= BULK_MATCH_THRESHOLD) {
-      const { error } = await supabase
-        .from("product_variants")
-        .update({ product_id: match.item.id, match_status: "aprovado" })
-        .eq("id", variant.id);
-      if (error) failed++;
-      else linked++;
+    if (!isSafeForBulkResolution(suggestion, BULK_MATCH_THRESHOLD) || !suggestion) {
+      skipped++;
       continue;
     }
 
-    const canonicalName = variant.original_name.trim();
-    const categoryName = variant.raw_payload?.category_name ?? null;
-    const categoryId = categoryName ? await findOrCreateCategory(supabase, brandId, categoryName) : null;
-
-    const { data: product, error: productError } = await supabase
-      .from("products")
-      .insert({
-        brand_id: brandId,
-        canonical_name: canonicalName,
-        category_id: categoryId,
-        current_price: variant.raw_payload?.price ?? null,
-      })
-      .select("id")
-      .single();
-
-    if (productError || !product) {
-      failed++;
-      continue;
-    }
-
-    const list = productsByBrand.get(brandId) ?? [];
-    list.push({ id: product.id as string, canonical_name: canonicalName });
-    productsByBrand.set(brandId, list);
-
-    const { error: variantError } = await supabase
+    const { error } = await supabase
       .from("product_variants")
-      .update({ product_id: product.id, match_status: "aprovado" })
+      .update({ product_id: suggestion.productId, match_status: "aprovado" })
       .eq("id", variant.id);
 
-    if (variantError) failed++;
-    else created++;
+    if (error) skipped++;
+    else {
+      linked++;
+      linkedVariantIds.push(variant.id);
+    }
+  }
+
+  if (linkedVariantIds.length > 0) {
+    const orgId = await getVariantOrgId(supabase, linkedVariantIds[0]);
+    if (orgId) {
+      await logAudit(supabase, {
+        organizationId: orgId,
+        actorUserId: user?.id ?? null,
+        action: "bulk_resolve_safe_matches",
+        entityType: "product_variant",
+        metadata: { linked, skipped, variantIds: linkedVariantIds },
+      });
+    }
   }
 
   revalidatePath("/correspondencia-produtos");
   revalidatePath("/produtos");
   revalidatePath("/categorias");
 
-  return { linked, created, failed, total: pendingVariants.length };
+  return { linked, skipped, total: pendingVariants.length };
 }
