@@ -1150,3 +1150,7 @@ create policy opportunity_events_write on opportunity_events for all
     select 1 from opportunities o where o.id = opportunity_events.opportunity_id
     and public.user_can_write_org(o.organization_id)
   ));
+
+-- Realtime pra "Produtos vendidos ao vivo" (ver migration 0012_realtime_orders.sql)
+alter publication supabase_realtime add table orders;
+alter publication supabase_realtime add table order_items;

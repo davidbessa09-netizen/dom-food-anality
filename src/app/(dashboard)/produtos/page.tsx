@@ -1,5 +1,4 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/auth/session";
@@ -14,9 +13,7 @@ import { SalesBarChart } from "@/components/charts/sales-bar-chart";
 import { VariantsTabContent } from "@/components/produtos/variants-tab-content";
 import {
   buildProductRanking,
-  daysSinceLastSale,
   findProductsWithoutSales,
-  rankByQuantity,
   rankByRevenue,
   averageItemsPerOrder,
   type ProductOrderItemInput,
@@ -27,6 +24,7 @@ import { classifyLowPerformers, type AllTimeSalesInfo } from "@/lib/metrics/prod
 import { findDuplicateProducts } from "@/lib/metrics/data-quality";
 import { salesByDay } from "@/lib/metrics/sales-timeseries";
 import { formatDayLabel } from "@/lib/dates/format";
+import { LiveSalesTab } from "@/components/produtos/live-sales/live-sales-tab";
 import type { Brand, Category, Product } from "@/types/database";
 import type { LowPerformerRow } from "@/lib/metrics/product-performance";
 
@@ -36,7 +34,7 @@ const STALE_DAYS_THRESHOLD = 30;
 
 const TABS = [
   { value: "visao-geral", label: "Visão geral" },
-  { value: "mais-vendidos", label: "Mais vendidos" },
+  { value: "vendidos-ao-vivo", label: "Produtos vendidos ao vivo" },
   { value: "baixa-saida", label: "Baixa saída" },
   { value: "sem-vendas", label: "Sem vendas" },
   { value: "catalogo", label: "Catálogo" },
@@ -225,7 +223,7 @@ export default async function ProductsPage({
         />
       )}
 
-      {tab === "mais-vendidos" && <TopSellersTab rankingRows={rankingRows} />}
+      {tab === "vendidos-ao-vivo" && <LiveSalesTab />}
 
       {tab === "sem-vendas" && (
         <NoSalesTab
@@ -398,110 +396,6 @@ async function OverviewTab({
           </CardContent>
         </Card>
       </div>
-    </div>
-  );
-}
-
-async function TopSellersTab({ rankingRows }: { rankingRows: ReturnType<typeof buildProductRanking> }) {
-  const topByQuantity = rankByQuantity(rankingRows).slice(0, 15);
-  const topByRevenue = rankByRevenue(rankingRows).slice(0, 15);
-  const now = new Date().toISOString();
-
-  return (
-    <div className="space-y-4">
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Mais vendidos (quantidade)</CardTitle>
-            <CardDescription>Pedidos concluídos no período.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Produto</TableHead>
-                  <TableHead className="text-right">Qtd.</TableHead>
-                  <TableHead className="text-right">Faturamento</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {topByQuantity.map((row, index) => (
-                  <TableRow key={`${index}-${row.name}`}>
-                    <TableCell className="max-w-[200px] truncate">{row.name}</TableCell>
-                    <TableCell className="text-right">{row.quantity}</TableCell>
-                    <TableCell className="text-right">{formatCurrency(row.revenue)}</TableCell>
-                  </TableRow>
-                ))}
-                {topByQuantity.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={3} className="text-center text-sm text-muted-foreground">
-                      Nenhuma venda concluída no período.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Mais vendidos (faturamento)</CardTitle>
-            <CardDescription>Pedidos concluídos no período.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Produto</TableHead>
-                  <TableHead className="text-right">Faturamento</TableHead>
-                  <TableHead className="text-right">Qtd.</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {topByRevenue.map((row, index) => (
-                  <TableRow key={`${index}-${row.name}`}>
-                    <TableCell className="max-w-[200px] truncate">{row.name}</TableCell>
-                    <TableCell className="text-right">{formatCurrency(row.revenue)}</TableCell>
-                    <TableCell className="text-right">{row.quantity}</TableCell>
-                  </TableRow>
-                ))}
-                {topByRevenue.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={3} className="text-center text-sm text-muted-foreground">
-                      Nenhuma venda concluída no período.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Dias desde a última venda</CardTitle>
-          <CardDescription>Só considera produtos que venderam pelo menos uma vez no período selecionado.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap gap-2">
-            {rankingRows
-              .slice()
-              .sort((a, b) => a.lastSoldAt.localeCompare(b.lastSoldAt))
-              .slice(0, 20)
-              .map((row) => {
-                const days = daysSinceLastSale(row.lastSoldAt, now);
-                return (
-                  <Badge key={row.name} variant={days > 7 ? "destructive" : "outline"}>
-                    {row.name}: {days === 0 ? "hoje" : `${days}d`}
-                  </Badge>
-                );
-              })}
-            {rankingRows.length === 0 && <p className="text-sm text-muted-foreground">Sem dados no período.</p>}
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }
