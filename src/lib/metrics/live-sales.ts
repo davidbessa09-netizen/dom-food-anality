@@ -134,6 +134,53 @@ export function buildOverallIndicators(confirmedEvents: SaleItemEvent[], cancell
   };
 }
 
+export interface OrderFeedGroup {
+  orderId: string;
+  orderedAt: string;
+  status: string;
+  storeName: string;
+  channel: string;
+  firstProductName: string;
+  itemCount: number;
+  totalQuantity: number;
+  totalValue: number;
+  items: SaleItemEvent[];
+}
+
+/** Agrupa eventos por pedido pra exibição compacta na "vendas acontecendo
+ * agora" — evita listar cada item de um pedido com vários produtos como
+ * linhas separadas (ex.: "Combo Mix + 3 itens", detalhes sob demanda). Usa
+ * o horário do primeiro item de cada pedido pra ordenação. */
+export function groupEventsByOrder(events: SaleItemEvent[]): OrderFeedGroup[] {
+  const byOrder = new Map<string, OrderFeedGroup>();
+
+  for (const e of events) {
+    const existing = byOrder.get(e.orderId);
+    if (existing) {
+      existing.itemCount += 1;
+      existing.totalQuantity += e.quantity;
+      existing.totalValue += e.totalPrice;
+      existing.items.push(e);
+      if (e.orderedAt < existing.orderedAt) existing.orderedAt = e.orderedAt;
+    } else {
+      byOrder.set(e.orderId, {
+        orderId: e.orderId,
+        orderedAt: e.orderedAt,
+        status: e.status,
+        storeName: e.storeName,
+        channel: e.channel,
+        firstProductName: e.productName,
+        itemCount: 1,
+        totalQuantity: e.quantity,
+        totalValue: e.totalPrice,
+        items: [e],
+      });
+    }
+  }
+
+  return Array.from(byOrder.values()).sort((a, b) => b.orderedAt.localeCompare(a.orderedAt));
+}
+
 export interface GrowthRow {
   productName: string;
   currentQuantity: number;

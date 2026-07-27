@@ -17,12 +17,16 @@ export function ProductDetailDrawer({
   onOpenChange,
   summary,
   events,
+  variants = [],
+  pending = false,
   onFilterPage,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   summary: ProductSalesSummary | null;
   events: SaleItemEvent[];
+  variants?: { originalName: string; platform: string }[];
+  pending?: boolean;
   onFilterPage: (productName: string) => void;
 }) {
   if (!summary) return null;
@@ -57,10 +61,29 @@ export function ProductDetailDrawer({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="sm:max-w-md">
         <SheetHeader>
-          <SheetTitle>{summary.productName}</SheetTitle>
+          <SheetTitle className="flex flex-wrap items-center gap-2">
+            {summary.productName}
+            {pending && (
+              <Badge variant="outline" className="text-amber-600">
+                Pendente de unificação
+              </Badge>
+            )}
+          </SheetTitle>
           <SheetDescription>Detalhes do produto no escopo e período filtrados.</SheetDescription>
         </SheetHeader>
         <div className="flex-1 space-y-4 overflow-y-auto px-4 pb-4 text-sm">
+          {variants.length > 0 && (
+            <div>
+              <p className="mb-1 text-xs font-medium text-muted-foreground">Variações reconhecidas</p>
+              <div className="flex flex-wrap gap-1">
+                {variants.map((v, i) => (
+                  <Badge key={i} variant="outline" title={v.originalName}>
+                    {v.platform}: {v.originalName}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-2">
             <div>
               <p className="text-xs text-muted-foreground">Quantidade vendida</p>

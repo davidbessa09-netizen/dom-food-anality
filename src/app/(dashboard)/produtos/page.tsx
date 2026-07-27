@@ -9,21 +9,20 @@ import { ProdutosExtraFilters } from "@/components/produtos/produtos-extra-filte
 import { CatalogTable, type CatalogRow } from "@/components/produtos/catalog-table";
 import { AbcCurveChart } from "@/components/produtos/abc-curve-chart";
 import { ShareBars } from "@/components/vendas/share-bars";
-import { SalesBarChart } from "@/components/charts/sales-bar-chart";
 import { VariantsTabContent } from "@/components/produtos/variants-tab-content";
 import {
   buildProductRanking,
   findProductsWithoutSales,
   rankByRevenue,
-  averageItemsPerOrder,
+  rankByQuantity,
   type ProductOrderItemInput,
   type RankingItemType,
 } from "@/lib/metrics/products";
 import { buildAbcCurve, topNConcentration } from "@/lib/metrics/abc-curve";
 import { classifyLowPerformers, type AllTimeSalesInfo } from "@/lib/metrics/product-performance";
 import { findDuplicateProducts } from "@/lib/metrics/data-quality";
-import { salesByDay } from "@/lib/metrics/sales-timeseries";
-import { formatDayLabel } from "@/lib/dates/format";
+import { previousPeriod } from "@/lib/dates/period";
+import { resolveCanonicalNames, type CanonicalResolution } from "@/lib/products/canonical-resolution";
 import { LiveSalesTab } from "@/components/produtos/live-sales/live-sales-tab";
 import type { Brand, Category, Product } from "@/types/database";
 import type { LowPerformerRow } from "@/lib/metrics/product-performance";
@@ -33,11 +32,22 @@ const LOW_QUANTITY_THRESHOLD = 3;
 const STALE_DAYS_THRESHOLD = 30;
 
 const TABS = [
-  { value: "visao-geral", label: "Visão geral" },
-  { value: "vendidos-ao-vivo", label: "Produtos vendidos ao vivo" },
+  { value: "vendidos", label: "Vendidos" },
+  { value: "desempenho", label: "Desempenho" },
+  { value: "catalogo", label: "Catálogo" },
+];
+
+const DESEMPENHO_SUBTABS = [
+  { value: "mais-vendidos", label: "Mais vendidos" },
+  { value: "crescimento-queda", label: "Crescimento e queda" },
   { value: "baixa-saida", label: "Baixa saída" },
   { value: "sem-vendas", label: "Sem vendas" },
-  { value: "catalogo", label: "Catálogo" },
+  { value: "curva-abc", label: "Curva ABC" },
+  { value: "categorias", label: "Categorias" },
+];
+
+const CATALOGO_SUBTABS = [
+  { value: "produtos", label: "Produtos cadastrados" },
   { value: "variacoes", label: "Variações/correspondências" },
 ];
 
@@ -58,10 +68,17 @@ interface OrderWithItems {
   order_items: { original_name: string; quantity: number; total_price: number; is_addon: boolean }[];
 }
 
-function flattenItems(rows: OrderWithItems[]): ProductOrderItemInput[] {
+/**
+ * Achata itens de pedido pra formato de ranking, resolvendo cada nome
+ * original pro nome CANÔNICO do produto quando existe uma variante já
+ * aprovada (ver [[resolveCanonicalNames]]) — evita que a mesma venda apareça
+ * fragmentada em várias linhas por causa de pequenas variações de texto na
+ * origem (ex.: "COMBO MIX + 1 pureza de 1lt" vs "+ 1 Pureza 1lt").
+ */
+function flattenItems(rows: OrderWithItems[], resolution?: CanonicalResolution): ProductOrderItemInput[] {
   return rows.flatMap((order) =>
     order.order_items.map((item) => ({
-      original_name: item.original_name,
+      original_name: resolution?.nameByOriginal.get(item.original_name) ?? item.original_name,
       quantity: item.quantity,
       total_price: item.total_price,
       is_addon: item.is_addon,
@@ -81,7 +98,9 @@ export default async function ProductsPage({
   const { period, periodPreset: preset, customFrom, customTo } = filters;
   const selectedBrandId = filters.brandId;
   const selectedCategoryId = filters.category;
-  const tab = TABS.some((t) => t.value === params.tab) ? (params.tab as string) : "visao-geral";
+  const tab = TABS.some((t) => t.value === params.tab) ? (params.tab as string) : "vendidos";
+  const desempenhoSubtab = DESEMPENHO_SUBTABS.some((t) => t.value === params.subtab) ? (params.subtab as string) : "mais-vendidos";
+  const catalogoSubtab = CATALOGO_SUBTABS.some((t) => t.value === params.subtab) ? (params.subtab as string) : "produtos";
   const itemType: RankingItemType =
     typeof params.itemType === "string" && (params.itemType === "adicional" || params.itemType === "all")
       ? params.itemType
@@ -107,6 +126,36 @@ export default async function ProductsPage({
 
   const allBrandIds = (brands ?? []).map((b) => b.id);
   const brandIds = selectedBrandId && allBrandIds.includes(selectedBrandId) ? [selectedBrandId] : allBrandIds;
+
+  function buildHref(nextTab: string) {
+    const usp = new URLSearchParams(
+      Object.entries(params).flatMap(([k, v]) => (typeof v === "string" ? [[k, v]] : []))
+    );
+    usp.set("tab", nextTab);
+    usp.delete("subtab");
+    return `?${usp.toString()}`;
+  }
+
+  function buildSubHref(nextSubtab: string) {
+    const usp = new URLSearchParams(
+      Object.entries(params).flatMap(([k, v]) => (typeof v === "string" ? [[k, v]] : []))
+    );
+    usp.set("subtab", nextSubtab);
+    return `?${usp.toString()}`;
+  }
+
+  if (tab === "vendidos") {
+    return (
+      <div className="space-y-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Produtos</h1>
+          <p className="text-sm text-muted-foreground">O que está vendendo agora, quanto faturou e onde.</p>
+        </div>
+        <PageTabs tabs={TABS} current={tab} buildHref={buildHref} />
+        <LiveSalesTab brands={(brands ?? []).map((b) => ({ id: b.id, name: b.name }))} />
+      </div>
+    );
+  }
 
   const { data: categories } = await supabase
     .from("categories")
@@ -142,6 +191,13 @@ export default async function ProductsPage({
   const scopedStoreIds = selectedStoreIds.length > 0 ? selectedStoreIds : allStoreIds;
   const storeFallback = scopedStoreIds.length ? scopedStoreIds : fallback;
 
+  // Resolução canônica: agrupa nomes de item que já têm correspondência
+  // aprovada em "Variações/correspondências" pro nome do produto no
+  // catálogo — usa o escopo COMPLETO de produtos da marca (não só os que
+  // passaram pelos filtros de catálogo), senão perderia correspondências.
+  const { data: allProductsInScope } = await supabase.from("products").select("id").in("brand_id", brandIds.length ? brandIds : fallback);
+  const resolution = await resolveCanonicalNames(supabase, (allProductsInScope ?? []).map((p) => p.id));
+
   let ordersInPeriodQuery = supabase
     .from("orders")
     .select("id, status, gross_amount, ordered_at, order_items(original_name, quantity, total_price, is_addon)")
@@ -153,7 +209,7 @@ export default async function ProductsPage({
   const { data: ordersInPeriod } = await ordersInPeriodQuery;
 
   const ordersInPeriodTyped = (ordersInPeriod ?? []) as unknown as OrderWithItems[];
-  const orderItemsFlat = flattenItems(ordersInPeriodTyped);
+  const orderItemsFlat = flattenItems(ordersInPeriodTyped, resolution);
   const rankingRows = buildProductRanking(orderItemsFlat, itemType);
 
   const catalogNames = (products ?? []).map((p) => p.canonical_name);
@@ -166,14 +222,6 @@ export default async function ProductsPage({
 
   const brandById = new Map((brands ?? []).map((b) => [b.id, b]));
   const categoryById = new Map((categories ?? []).map((c) => [c.id, c]));
-
-  function buildHref(nextTab: string) {
-    const usp = new URLSearchParams(
-      Object.entries(params).flatMap(([k, v]) => (typeof v === "string" ? [[k, v]] : []))
-    );
-    usp.set("tab", nextTab);
-    return `?${usp.toString()}`;
-  }
 
   return (
     <div className="space-y-4">
@@ -214,68 +262,204 @@ export default async function ProductsPage({
         />
       </div>
 
-      {tab === "visao-geral" && (
-        <OverviewTab
-          rankingRows={rankingRows}
-          products={products ?? []}
-          categoryById={categoryById}
-          ordersInPeriodTyped={ordersInPeriodTyped}
-        />
-      )}
+      {tab === "desempenho" && (
+        <div className="space-y-4">
+          <PageTabs tabs={DESEMPENHO_SUBTABS} current={desempenhoSubtab} buildHref={buildSubHref} />
 
-      {tab === "vendidos-ao-vivo" && <LiveSalesTab />}
+          {desempenhoSubtab === "mais-vendidos" && <TopSellersSection rankingRows={rankingRows} />}
 
-      {tab === "sem-vendas" && (
-        <NoSalesTab
-          products={products ?? []}
-          rankingRows={rankingRows}
-          brandById={brandById}
-          categoryById={categoryById}
-          catalogNames={catalogNames}
-        />
-      )}
+          {desempenhoSubtab === "crescimento-queda" && (
+            <GrowthDeclineSection
+              storeFallback={storeFallback}
+              filters={filters}
+              itemType={itemType}
+              rankingRows={rankingRows}
+              period={period}
+              supabase={supabase}
+              resolution={resolution}
+            />
+          )}
 
-      {tab === "baixa-saida" && (
-        <LowPerformersTab
-          storeFallback={storeFallback}
-          products={products ?? []}
-          rankingRows={rankingRows}
-          itemType={itemType}
-          supabase={supabase}
-        />
+          {desempenhoSubtab === "baixa-saida" && (
+            <LowPerformersTab
+              storeFallback={storeFallback}
+              products={products ?? []}
+              rankingRows={rankingRows}
+              itemType={itemType}
+              supabase={supabase}
+              resolution={resolution}
+            />
+          )}
+
+          {desempenhoSubtab === "sem-vendas" && (
+            <NoSalesTab products={products ?? []} rankingRows={rankingRows} brandById={brandById} categoryById={categoryById} catalogNames={catalogNames} />
+          )}
+
+          {desempenhoSubtab === "curva-abc" && <AbcCurveSection rankingRows={rankingRows} />}
+
+          {desempenhoSubtab === "categorias" && <CategoriesSection rankingRows={rankingRows} products={products ?? []} categoryById={categoryById} />}
+        </div>
       )}
 
       {tab === "catalogo" && (
-        <CatalogTabContent
-          productsForCatalog={productsForCatalog}
-          products={products ?? []}
-          brands={brands ?? []}
-          categories={categories ?? []}
-          brandById={brandById}
-          categoryById={categoryById}
-          supabase={supabase}
-        />
-      )}
+        <div className="space-y-4">
+          <PageTabs tabs={CATALOGO_SUBTABS} current={catalogoSubtab} buildHref={buildSubHref} />
 
-      {tab === "variacoes" && <VariantsTabContent brandIds={brandIds} />}
+          {catalogoSubtab === "produtos" && (
+            <CatalogTabContent
+              productsForCatalog={productsForCatalog}
+              products={products ?? []}
+              brands={brands ?? []}
+              categories={categories ?? []}
+              brandById={brandById}
+              categoryById={categoryById}
+              supabase={supabase}
+              resolution={resolution}
+            />
+          )}
+
+          {catalogoSubtab === "variacoes" && <VariantsTabContent brandIds={brandIds} />}
+        </div>
+      )}
     </div>
   );
 }
 
-async function OverviewTab({
-  rankingRows,
-  products,
-  categoryById,
-  ordersInPeriodTyped,
-}: {
-  rankingRows: ReturnType<typeof buildProductRanking>;
-  products: Product[];
-  categoryById: Map<string, Category>;
-  ordersInPeriodTyped: OrderWithItems[];
-}) {
+function TopSellersSection({ rankingRows }: { rankingRows: ReturnType<typeof buildProductRanking> }) {
   const totalRevenue = rankingRows.reduce((sum, r) => sum + r.revenue, 0);
-  const totalQuantity = rankingRows.reduce((sum, r) => sum + r.quantity, 0);
+  const byRevenue = rankByRevenue(rankingRows).slice(0, 15);
+  const byQuantity = rankByQuantity(rankingRows).slice(0, 15);
 
+  return (
+    <div className="grid gap-4 lg:grid-cols-2">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Mais vendidos (faturamento)</CardTitle>
+          <CardDescription>Top 15 produtos por faturamento no período selecionado.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ShareBars
+            rows={byRevenue.map((r) => ({ key: r.name, label: r.name, revenue: r.revenue, share: totalRevenue > 0 ? r.revenue / totalRevenue : 0 }))}
+            emptyLabel="Sem dados no período."
+          />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Mais vendidos (quantidade)</CardTitle>
+          <CardDescription>Top 15 produtos por unidades vendidas no período selecionado.</CardDescription>
+        </CardHeader>
+        <CardContent className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Produto</TableHead>
+                <TableHead className="text-right">Qtd.</TableHead>
+                <TableHead className="text-right">Faturamento</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {byQuantity.map((r) => (
+                <TableRow key={r.name}>
+                  <TableCell className="max-w-[220px] truncate font-medium">{r.name}</TableCell>
+                  <TableCell className="text-right tabular-nums">{r.quantity}</TableCell>
+                  <TableCell className="text-right tabular-nums">{formatCurrency(r.revenue)}</TableCell>
+                </TableRow>
+              ))}
+              {byQuantity.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={3} className="text-center text-sm text-muted-foreground">
+                    Sem dados no período.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+async function GrowthDeclineSection({
+  storeFallback,
+  filters,
+  itemType,
+  rankingRows,
+  period,
+  supabase,
+  resolution,
+}: {
+  storeFallback: string[];
+  filters: ReturnType<typeof parseFilters>;
+  itemType: RankingItemType;
+  rankingRows: ReturnType<typeof buildProductRanking>;
+  period: { start: Date; end: Date };
+  supabase: Awaited<ReturnType<typeof createClient>>;
+  resolution: CanonicalResolution;
+}) {
+  const previous = previousPeriod(period);
+
+  let previousOrdersQuery = supabase
+    .from("orders")
+    .select("id, status, gross_amount, ordered_at, order_items(original_name, quantity, total_price, is_addon)")
+    .in("store_id", storeFallback)
+    .gte("ordered_at", previous.start.toISOString())
+    .lte("ordered_at", previous.end.toISOString());
+  if (filters.channel) previousOrdersQuery = previousOrdersQuery.eq("source_platform", filters.channel);
+  if (filters.fulfillment) previousOrdersQuery = previousOrdersQuery.eq("fulfillment_type", filters.fulfillment);
+  const { data: previousOrders } = await previousOrdersQuery;
+  const previousRankingRows = buildProductRanking(flattenItems((previousOrders ?? []) as unknown as OrderWithItems[], resolution), itemType);
+  const previousByName = new Map(previousRankingRows.map((r) => [r.name, r.quantity]));
+
+  const rows = rankingRows
+    .map((r) => {
+      const previousQuantity = previousByName.get(r.name);
+      if (previousQuantity === undefined || previousQuantity <= 0) return null;
+      return { name: r.name, quantity: r.quantity, previousQuantity, growth: (r.quantity - previousQuantity) / previousQuantity };
+    })
+    .filter((r): r is { name: string; quantity: number; previousQuantity: number; growth: number } => r !== null);
+
+  const growing = rows.filter((r) => r.growth > 0).sort((a, b) => b.growth - a.growth).slice(0, 12);
+  const declining = rows.filter((r) => r.growth < 0).sort((a, b) => a.growth - b.growth).slice(0, 12);
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-2">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Produtos em crescimento</CardTitle>
+          <CardDescription>Maior aumento de unidades vs. o período anterior de mesma duração — exclui produtos sem histórico anterior pra comparar.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-1.5">
+          {growing.map((r) => (
+            <div key={r.name} className="flex items-center justify-between text-sm">
+              <span className="truncate">{r.name}</span>
+              <span className="font-medium text-success">+{formatPercent(r.growth)}</span>
+            </div>
+          ))}
+          {growing.length === 0 && <p className="text-sm text-muted-foreground">Sem dados suficientes pra comparar.</p>}
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Produtos em queda</CardTitle>
+          <CardDescription>Maior redução de unidades vs. o período anterior de mesma duração.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-1.5">
+          {declining.map((r) => (
+            <div key={r.name} className="flex items-center justify-between text-sm">
+              <span className="truncate">{r.name}</span>
+              <span className="font-medium text-danger">{formatPercent(r.growth)}</span>
+            </div>
+          ))}
+          {declining.length === 0 && <p className="text-sm text-muted-foreground">Sem dados suficientes pra comparar.</p>}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function AbcCurveSection({ rankingRows }: { rankingRows: ReturnType<typeof buildProductRanking> }) {
   const abcRows = buildAbcCurve(rankingRows.map((r) => ({ name: r.name, revenue: r.revenue, quantity: r.quantity })));
   const countA = abcRows.filter((r) => r.classification === "A").length;
   const countB = abcRows.filter((r) => r.classification === "B").length;
@@ -285,9 +469,32 @@ async function OverviewTab({
     10
   );
 
-  const itemsPerOrder = averageItemsPerOrder(
-    ordersInPeriodTyped.map((o) => ({ status: o.status, items: o.order_items }))
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Curva ABC</CardTitle>
+        <CardDescription>
+          A: {countA} produto(s) · B: {countB} · C: {countC} — corte em 80%/95% do faturamento acumulado. Concentração no
+          top 10: {formatPercent(concentrationTop10)}.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {abcRows.length > 0 ? <AbcCurveChart rows={abcRows} /> : <p className="text-sm text-muted-foreground">Sem dados no período.</p>}
+      </CardContent>
+    </Card>
   );
+}
+
+function CategoriesSection({
+  rankingRows,
+  products,
+  categoryById,
+}: {
+  rankingRows: ReturnType<typeof buildProductRanking>;
+  products: Product[];
+  categoryById: Map<string, Category>;
+}) {
+  const totalRevenue = rankingRows.reduce((sum, r) => sum + r.revenue, 0);
 
   // Receita por categoria: cada item vendido é correspondido ao produto do
   // catálogo pelo nome (mesmo critério simplificado usado no resto do
@@ -306,97 +513,19 @@ async function OverviewTab({
     .map(([name, revenue]) => ({ key: name, label: name, revenue, share: totalRevenue > 0 ? revenue / totalRevenue : 0 }))
     .sort((a, b) => b.revenue - a.revenue);
 
-  const byDay = salesByDay(ordersInPeriodTyped).map((r) => ({
-    label: formatDayLabel(r.date),
-    revenue: r.revenue,
-    orders: r.orders,
-  }));
-
-  const top10 = rankByRevenue(rankingRows).slice(0, 10);
-
   return (
-    <div className="space-y-4">
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Quantidade vendida</CardDescription>
-            <CardTitle className="text-2xl">{totalQuantity}</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Faturamento de produtos</CardDescription>
-            <CardTitle className="text-2xl">{formatCurrency(totalRevenue)}</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Itens por pedido</CardDescription>
-            <CardTitle className="text-2xl">{itemsPerOrder === null ? "—" : itemsPerOrder.toFixed(1)}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">Só itens principais, pedidos concluídos</CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Concentração no top 10</CardDescription>
-            <CardTitle className="text-2xl">{formatPercent(concentrationTop10)}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-muted-foreground">
-            {concentrationTop10 === null ? "Sem faturamento no período" : "Do faturamento vem dos 10 produtos mais vendidos"}
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Tendência de faturamento</CardTitle>
-          <CardDescription>Faturamento bruto diário no escopo e período selecionados.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {byDay.length > 0 ? <SalesBarChart data={byDay} /> : <p className="text-sm text-muted-foreground">Sem dados no período.</p>}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Receita por categoria</CardTitle>
-          <CardDescription>
-            Correspondência por nome do produto — itens ainda sem vínculo confirmado em
-            &quot;Variações/correspondências&quot; aparecem em &quot;Sem categoria&quot;.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ShareBars rows={categoryRows} emptyLabel="Sem dados no período." />
-        </CardContent>
-      </Card>
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Curva ABC</CardTitle>
-            <CardDescription>
-              A: {countA} produto(s) · B: {countB} · C: {countC} — corte em 80%/95% do faturamento acumulado.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {abcRows.length > 0 ? <AbcCurveChart rows={abcRows} /> : <p className="text-sm text-muted-foreground">Sem dados no período.</p>}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Participação no faturamento (top 10)</CardTitle>
-            <CardDescription>Faturamento e participação de cada produto no total do período.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ShareBars
-              rows={top10.map((r) => ({ key: r.name, label: r.name, revenue: r.revenue, share: totalRevenue > 0 ? r.revenue / totalRevenue : 0 }))}
-              emptyLabel="Sem dados no período."
-            />
-          </CardContent>
-        </Card>
-      </div>
-    </div>
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Receita por categoria</CardTitle>
+        <CardDescription>
+          Correspondência por nome do produto — itens ainda sem vínculo confirmado em
+          &quot;Variações/correspondências&quot; aparecem em &quot;Sem categoria&quot;.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <ShareBars rows={categoryRows} emptyLabel="Sem dados no período." />
+      </CardContent>
+    </Card>
   );
 }
 
@@ -470,19 +599,21 @@ async function LowPerformersTab({
   rankingRows,
   itemType,
   supabase,
+  resolution,
 }: {
   storeFallback: string[];
   products: Product[];
   rankingRows: ReturnType<typeof buildProductRanking>;
   itemType: RankingItemType;
   supabase: Awaited<ReturnType<typeof createClient>>;
+  resolution: CanonicalResolution;
 }) {
   const { data: allTimeOrdersRaw } = await supabase
     .from("orders")
     .select("status, ordered_at, order_items(original_name, quantity, total_price, is_addon)")
     .in("store_id", storeFallback);
 
-  const allTimeItems = flattenItems((allTimeOrdersRaw ?? []) as unknown as OrderWithItems[]);
+  const allTimeItems = flattenItems((allTimeOrdersRaw ?? []) as unknown as OrderWithItems[], resolution);
   const allTimeRankingRows = buildProductRanking(allTimeItems, itemType);
   const allTimeAllRankingRows = buildProductRanking(allTimeItems, "all");
   const allTimePrincipalNames = new Set(buildProductRanking(allTimeItems, "principal").map((r) => r.name));
@@ -546,6 +677,7 @@ async function CatalogTabContent({
   brandById,
   categoryById,
   supabase,
+  resolution,
 }: {
   productsForCatalog: Product[];
   products: Product[];
@@ -554,6 +686,7 @@ async function CatalogTabContent({
   brandById: Map<string, Brand>;
   categoryById: Map<string, Category>;
   supabase: Awaited<ReturnType<typeof createClient>>;
+  resolution: CanonicalResolution;
 }) {
   const productIds = products.map((p) => p.id);
   const fallback = ["00000000-0000-0000-0000-000000000000"];
@@ -563,7 +696,7 @@ async function CatalogTabContent({
     .select("status, ordered_at, order_items(original_name, quantity, total_price, is_addon)")
     .limit(20000);
 
-  const allTimeRanking = buildProductRanking(flattenItems((allTimeOrdersRaw ?? []) as unknown as OrderWithItems[]), "all");
+  const allTimeRanking = buildProductRanking(flattenItems((allTimeOrdersRaw ?? []) as unknown as OrderWithItems[], resolution), "all");
   const lastSoldByName = new Map(allTimeRanking.map((r) => [r.name, r.lastSoldAt]));
 
   interface VariantJoinRow {

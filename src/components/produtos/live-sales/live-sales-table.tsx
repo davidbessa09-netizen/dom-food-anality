@@ -12,7 +12,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowDown, ArrowUp, ArrowUpDown, Columns3 } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Columns3, MoreHorizontal } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import type { ProductSalesSummary } from "@/lib/metrics/live-sales";
 
 function formatCurrency(value: number | null) {
@@ -51,11 +52,13 @@ export function LiveSalesTable({
   summaries,
   previousSummaries,
   categoryByProductName,
+  pendingNames = new Set(),
   onViewDetails,
 }: {
   summaries: ProductSalesSummary[];
   previousSummaries: ProductSalesSummary[];
   categoryByProductName: Map<string, string>;
+  pendingNames?: Set<string>;
   onViewDetails: (summary: ProductSalesSummary) => void;
 }) {
   const [search, setSearch] = useState("");
@@ -198,10 +201,17 @@ export function LiveSalesTable({
                 <TableRow key={row.productName}>
                   {visibleKeys.has("productName") && (
                     <TableCell className="max-w-0">
-                      <Tooltip>
-                        <TooltipTrigger render={<span className="block truncate font-medium" />}>{row.productName}</TooltipTrigger>
-                        <TooltipContent side="top">{row.productName}</TooltipContent>
-                      </Tooltip>
+                      <div className="flex items-center gap-1.5">
+                        <Tooltip>
+                          <TooltipTrigger render={<span className="block truncate font-medium" />}>{row.productName}</TooltipTrigger>
+                          <TooltipContent side="top">{row.productName}</TooltipContent>
+                        </Tooltip>
+                        {pendingNames.has(row.productName) && (
+                          <Badge variant="outline" className="shrink-0 whitespace-nowrap text-[10px] text-amber-600">
+                            Pendente
+                          </Badge>
+                        )}
+                      </div>
                     </TableCell>
                   )}
                   {visibleKeys.has("categoryName") && <TableCell className="text-xs">{categoryByProductName.get(row.productName) ?? "—"}</TableCell>}
@@ -225,9 +235,20 @@ export function LiveSalesTable({
                     </TableCell>
                   )}
                   <TableCell>
-                    <Button variant="ghost" size="sm" onClick={() => onViewDetails(row)}>
-                      Ver detalhes
-                    </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="size-8" />}>
+                        <MoreHorizontal className="size-4" />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <button
+                          type="button"
+                          className="flex w-full items-center rounded-sm px-2 py-1.5 text-left text-sm hover:bg-muted"
+                          onClick={() => onViewDetails(row)}
+                        >
+                          Ver detalhes
+                        </button>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </TableCell>
                 </TableRow>
               );

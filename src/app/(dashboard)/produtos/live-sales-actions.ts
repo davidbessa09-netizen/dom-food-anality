@@ -9,6 +9,8 @@ import type { SaleItemEvent } from "@/lib/metrics/live-sales";
 
 const EVENT_CAP = 8000;
 
+export type ItemTypeFilter = "principal" | "adicional" | "all";
+
 export interface LiveSalesFilters {
   brandId: string | null;
   storeIds: string[];
@@ -21,6 +23,11 @@ export interface LiveSalesFilters {
   fulfillment: string | null;
   status: string | null;
   product: string | null;
+  minPrice?: string;
+  maxPrice?: string;
+  active: string | null;
+  hasPrice: string | null;
+  itemType: ItemTypeFilter;
 }
 
 export interface LiveSalesData {
@@ -32,6 +39,14 @@ export interface LiveSalesData {
   categoryOptions: { id: string; name: string }[];
   storeOptions: { id: string; name: string }[];
   truncated: boolean;
+  /** Nomes originais (já resolvidos pro nome canônico quando havia
+   * correspondência aprovada) que ainda não têm correspondência confirmada —
+   * a tabela exibe esses como "Pendente de unificação", nunca agrupa por
+   * parecença de texto sozinha. */
+  pendingUnificationNames: string[];
+  /** Variações reconhecidas (nome original + plataforma) por produto canônico,
+   * usadas no drawer de detalhe do produto. */
+  variantsByProduct: Record<string, { originalName: string; platform: string }[]>;
 }
 
 interface OrderRow {
@@ -46,6 +61,11 @@ interface OrderRow {
   order_items: { original_name: string; quantity: number; total_price: number; is_addon: boolean }[];
 }
 
+interface NameResolution {
+  canonicalName: string;
+  confirmed: boolean;
+}
+
 async function fetchEvents(
   supabase: Awaited<ReturnType<typeof createClient>>,
   storeIds: string[],
@@ -53,7 +73,8 @@ async function fetchEvents(
   start: string,
   end: string,
   filters: LiveSalesFilters,
-  productNameFilter: Set<string> | null
+  originalNameFilter: Set<string> | null,
+  nameResolution: Map<string, NameResolution>
 ): Promise<{ events: SaleItemEvent[]; truncated: boolean }> {
   const fallback = ["00000000-0000-0000-0000-000000000000"];
   let query = supabase
@@ -77,7 +98,12 @@ async function fetchEvents(
 
   const events: SaleItemEvent[] = rows.flatMap((order) =>
     order.order_items
-      .filter((item) => !productNameFilter || productNameFilter.has(item.original_name))
+      .filter((item) => {
+        if (filters.itemType === "principal" && item.is_addon) return false;
+        if (filters.itemType === "adicional" && !item.is_addon) return false;
+        if (!originalNameFilter) return true;
+        return originalNameFilter.has(item.original_name);
+      })
       .map((item) => ({
         orderId: order.id,
         orderedAt: order.ordered_at,
@@ -87,7 +113,7 @@ async function fetchEvents(
         channel: CHANNEL_OPTIONS.find((o) => o.value === order.source_platform)?.label ?? order.source_platform,
         paymentMethod: order.payment_method ? formatPaymentMethod(order.payment_method) : null,
         fulfillment: order.fulfillment_type,
-        productName: item.original_name,
+        productName: nameResolution.get(item.original_name)?.canonicalName ?? item.original_name,
         quantity: item.quantity,
         totalPrice: item.total_price,
         isAddon: item.is_addon,
@@ -116,26 +142,98 @@ export async function getLiveSalesData(filters: LiveSalesFilters): Promise<LiveS
   const { data: categories } = await supabase.from("categories").select("id, canonical_name").in("brand_id", brandIds.length ? brandIds : fallback);
   const { data: products } = await supabase
     .from("products")
-    .select("id, canonical_name, category_id")
+    .select("id, canonical_name, category_id, current_price, is_active")
     .in("brand_id", brandIds.length ? brandIds : fallback)
     .order("canonical_name");
 
-  // Correspondência canônica confirmada: quando o usuário filtra por um
-  // produto, inclui também as variantes já APROVADAS pra esse produto (nomes
-  // diferentes por plataforma), nunca por parecença de texto não confirmada.
-  let productNameFilter: Set<string> | null = null;
-  if (filters.product) {
-    const matchedProduct = (products ?? []).find((p) => p.canonical_name === filters.product);
-    const names = new Set<string>([filters.product]);
-    if (matchedProduct) {
-      const { data: variants } = await supabase
-        .from("product_variants")
-        .select("original_name")
-        .eq("product_id", matchedProduct.id)
-        .eq("match_status", "aprovado");
-      for (const v of variants ?? []) names.add(v.original_name);
+  const productIds = (products ?? []).map((p) => p.id);
+  const productById = new Map((products ?? []).map((p) => [p.id, p]));
+
+  // Correspondência canônica: todo item de pedido é agrupado pelo nome
+  // original (original_name), a não ser que exista uma variante APROVADA
+  // ligando esse nome a um produto canônico — nesse caso agrupa pelo nome
+  // canônico. Nunca agrupa automaticamente só por parecença de texto; nomes
+  // sem correspondência aprovada ficam marcados como "pendente".
+  const { data: allVariants } = await supabase
+    .from("product_variants")
+    .select("product_id, original_name, match_status, sales_channels(platform)")
+    .in("product_id", productIds.length ? productIds : fallback);
+
+  interface VariantRow {
+    product_id: string | null;
+    original_name: string;
+    match_status: string;
+    sales_channels: { platform: string } | { platform: string }[] | null;
+  }
+  const variantRows = (allVariants ?? []) as unknown as VariantRow[];
+
+  const nameResolution = new Map<string, NameResolution>();
+  // Identidade: o próprio nome canônico do produto sempre resolve pra si
+  // mesmo, já confirmado (é assim que o resto do sistema já casa nome do
+  // item com produto, ver METRICS_AUDIT.md).
+  for (const p of products ?? []) {
+    nameResolution.set(p.canonical_name, { canonicalName: p.canonical_name, confirmed: true });
+  }
+  const variantsByProduct: Record<string, { originalName: string; platform: string }[]> = {};
+  for (const v of variantRows) {
+    const platform = Array.isArray(v.sales_channels) ? v.sales_channels[0]?.platform : v.sales_channels?.platform;
+    if (v.match_status === "aprovado" && v.product_id) {
+      const product = productById.get(v.product_id);
+      if (product) {
+        nameResolution.set(v.original_name, { canonicalName: product.canonical_name, confirmed: true });
+        if (v.original_name !== product.canonical_name) {
+          const list = variantsByProduct[product.canonical_name] ?? [];
+          list.push({ originalName: v.original_name, platform: platform ?? "—" });
+          variantsByProduct[product.canonical_name] = list;
+        }
+        continue;
+      }
     }
-    productNameFilter = names;
+    if (!nameResolution.has(v.original_name)) {
+      nameResolution.set(v.original_name, { canonicalName: v.original_name, confirmed: false });
+    }
+  }
+
+  // Correspondência canônica confirmada: quando o usuário filtra por um
+  // produto, inclui também os nomes originais já aprovados pra esse produto
+  // (nomes diferentes por plataforma), nunca por parecença de texto não
+  // confirmada.
+  let originalNameFilter: Set<string> | null = null;
+  if (filters.product) {
+    const names = new Set<string>();
+    for (const [originalName, resolution] of nameResolution) {
+      if (resolution.canonicalName === filters.product) names.add(originalName);
+    }
+    names.add(filters.product);
+    originalNameFilter = names;
+  }
+
+  // Faixa de preço / ativo-inativo / com-sem preço: filtros de catálogo
+  // aplicados aqui como recorte adicional sobre os nomes de produto
+  // (produtos sem correspondência no catálogo são excluídos quando algum
+  // desses filtros está ativo, já que não há como avaliá-los).
+  const hasCatalogFilter = Boolean(filters.minPrice || filters.maxPrice || filters.active || filters.hasPrice);
+  if (hasCatalogFilter) {
+    const allowedNames = new Set<string>();
+    for (const p of products ?? []) {
+      if (filters.active === "ativo" && !p.is_active) continue;
+      if (filters.active === "inativo" && p.is_active) continue;
+      if (filters.hasPrice === "com" && p.current_price === null) continue;
+      if (filters.hasPrice === "sem" && p.current_price !== null) continue;
+      if (filters.minPrice && (p.current_price === null || p.current_price < Number(filters.minPrice))) continue;
+      if (filters.maxPrice && (p.current_price === null || p.current_price > Number(filters.maxPrice))) continue;
+      allowedNames.add(p.canonical_name);
+    }
+    if (originalNameFilter) {
+      for (const name of [...originalNameFilter]) {
+        if (!allowedNames.has(nameResolution.get(name)?.canonicalName ?? name)) originalNameFilter.delete(name);
+      }
+    } else {
+      originalNameFilter = new Set<string>();
+      for (const [originalName, resolution] of nameResolution) {
+        if (allowedNames.has(resolution.canonicalName)) originalNameFilter.add(originalName);
+      }
+    }
   }
 
   const preset: PeriodPreset = isPeriodPreset(filters.periodPreset) ? filters.periodPreset : "hoje";
@@ -144,8 +242,8 @@ export async function getLiveSalesData(filters: LiveSalesFilters): Promise<LiveS
   const previous = previousPeriod(period);
 
   const [current, prev] = await Promise.all([
-    fetchEvents(supabase, scopedStoreIds, storeNameById, period.start.toISOString(), period.end.toISOString(), filters, productNameFilter),
-    fetchEvents(supabase, scopedStoreIds, storeNameById, previous.start.toISOString(), previous.end.toISOString(), filters, productNameFilter),
+    fetchEvents(supabase, scopedStoreIds, storeNameById, period.start.toISOString(), period.end.toISOString(), filters, originalNameFilter, nameResolution),
+    fetchEvents(supabase, scopedStoreIds, storeNameById, previous.start.toISOString(), previous.end.toISOString(), filters, originalNameFilter, nameResolution),
   ]);
 
   // Filtro por categoria: correspondência por nome do produto (mesma
@@ -172,6 +270,10 @@ export async function getLiveSalesData(filters: LiveSalesFilters): Promise<LiveS
     .limit(1);
   const lastSyncedAt = integrations?.[0]?.last_synced_at ?? null;
 
+  const pendingUnificationNames = Array.from(nameResolution.entries())
+    .filter(([, resolution]) => !resolution.confirmed)
+    .map(([, resolution]) => resolution.canonicalName);
+
   return {
     currentEvents,
     previousEvents,
@@ -181,6 +283,8 @@ export async function getLiveSalesData(filters: LiveSalesFilters): Promise<LiveS
     categoryOptions: (categories ?? []).map((c) => ({ id: c.id, name: c.canonical_name })),
     storeOptions: (stores ?? []).map((s) => ({ id: s.id, name: s.name })),
     truncated: current.truncated,
+    pendingUnificationNames,
+    variantsByProduct,
   };
 }
 

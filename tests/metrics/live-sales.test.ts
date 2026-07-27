@@ -4,6 +4,7 @@ import {
   buildProductSalesSummaries,
   buildOverallIndicators,
   buildGrowthComparison,
+  groupEventsByOrder,
   type SaleItemEvent,
 } from "@/lib/metrics/live-sales";
 
@@ -93,6 +94,33 @@ describe("buildOverallIndicators", () => {
     expect(indicators.distinctProducts).toBe(2);
     expect(indicators.cancelledUnits).toBe(5);
     expect(indicators.topSellingProductByQuantity).toBe("Combo Mix");
+  });
+});
+
+describe("groupEventsByOrder", () => {
+  it("agrupa múltiplos itens do mesmo pedido em um só grupo", () => {
+    const events = [
+      makeEvent({ orderId: "o1", productName: "Combo Mix", quantity: 1, totalPrice: 89.9, orderedAt: "2026-07-25T22:43:00Z" }),
+      makeEvent({ orderId: "o1", productName: "Pureza 1 Lt", quantity: 1, totalPrice: 10, orderedAt: "2026-07-25T22:43:05Z" }),
+      makeEvent({ orderId: "o1", productName: "Tarê", quantity: 1, totalPrice: 2, orderedAt: "2026-07-25T22:43:10Z" }),
+      makeEvent({ orderId: "o2", productName: "Temaki", quantity: 2, totalPrice: 60, orderedAt: "2026-07-25T22:00:00Z" }),
+    ];
+    const groups = groupEventsByOrder(events);
+    expect(groups).toHaveLength(2);
+    const first = groups.find((g) => g.orderId === "o1")!;
+    expect(first.itemCount).toBe(3);
+    expect(first.totalQuantity).toBe(3);
+    expect(first.totalValue).toBeCloseTo(101.9, 5);
+    expect(first.firstProductName).toBe("Combo Mix");
+  });
+
+  it("ordena grupos do mais recente pro mais antigo", () => {
+    const events = [
+      makeEvent({ orderId: "o1", orderedAt: "2026-07-25T10:00:00Z" }),
+      makeEvent({ orderId: "o2", orderedAt: "2026-07-25T12:00:00Z" }),
+    ];
+    const groups = groupEventsByOrder(events);
+    expect(groups.map((g) => g.orderId)).toEqual(["o2", "o1"]);
   });
 });
 
