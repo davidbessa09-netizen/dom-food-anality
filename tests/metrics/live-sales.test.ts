@@ -5,6 +5,7 @@ import {
   buildOverallIndicators,
   buildGrowthComparison,
   groupEventsByOrder,
+  filterByWeekday,
   type SaleItemEvent,
 } from "@/lib/metrics/live-sales";
 
@@ -69,6 +70,17 @@ describe("buildProductSalesSummaries", () => {
     expect(summaries[0].orders).toBe(1);
   });
 
+  it("rastreia a primeira e a última venda separadamente", () => {
+    const events = [
+      makeEvent({ orderId: "o1", orderedAt: "2026-07-20T10:00:00Z" }),
+      makeEvent({ orderId: "o2", orderedAt: "2026-07-25T10:00:00Z" }),
+      makeEvent({ orderId: "o3", orderedAt: "2026-07-22T10:00:00Z" }),
+    ];
+    const summaries = buildProductSalesSummaries(events);
+    expect(summaries[0].firstSoldAt).toBe("2026-07-20T10:00:00Z");
+    expect(summaries[0].lastSoldAt).toBe("2026-07-25T10:00:00Z");
+  });
+
   it("identifica a loja e o canal com mais faturamento pro produto", () => {
     const events = [
       makeEvent({ orderId: "o1", storeName: "Gulas", channel: "Anota AI", totalPrice: 50 }),
@@ -121,6 +133,24 @@ describe("groupEventsByOrder", () => {
     ];
     const groups = groupEventsByOrder(events);
     expect(groups.map((g) => g.orderId)).toEqual(["o2", "o1"]);
+  });
+});
+
+describe("filterByWeekday", () => {
+  it("retorna tudo quando weekday é null (período de um dia só, sem filtro visível)", () => {
+    const events = [makeEvent({ orderedAt: "2026-07-25T10:00:00Z" })];
+    expect(filterByWeekday(events, null)).toHaveLength(1);
+  });
+
+  it("filtra pelo dia da semana no fuso America/Sao_Paulo", () => {
+    // 2026-07-25T10:00:00Z = 2026-07-25 07:00 em America/Sao_Paulo, sábado.
+    const events = [
+      makeEvent({ orderId: "o1", orderedAt: "2026-07-25T10:00:00Z" }), // sábado (6)
+      makeEvent({ orderId: "o2", orderedAt: "2026-07-26T10:00:00Z" }), // domingo (0)
+    ];
+    expect(filterByWeekday(events, 6)).toHaveLength(1);
+    expect(filterByWeekday(events, 0)).toHaveLength(1);
+    expect(filterByWeekday(events, 1)).toHaveLength(0);
   });
 });
 

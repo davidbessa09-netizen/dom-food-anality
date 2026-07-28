@@ -1,8 +1,10 @@
-// "Produtos vendidos ao vivo" (/produtos) — funções puras de agregação.
+// "Produtos vendidos" (/produtos) — funções puras de agregação.
 // Regra central: NUNCA confundir unidades vendidas, número de pedidos,
 // faturamento e clientes — cada um é contado separadamente (ver
 // METRICS_AUDIT.md). Adicionais (is_addon) nunca entram na agregação de
 // produto principal por padrão.
+
+import { APP_TIMEZONE } from "@/lib/dates/period";
 
 export type SaleStatusMode = "confirmadas" | "em_andamento" | "canceladas";
 
@@ -42,6 +44,7 @@ export interface ProductSalesSummary {
   orders: number;
   revenue: number;
   avgPrice: number | null;
+  firstSoldAt: string;
   lastSoldAt: string;
   topStoreName: string | null;
   topChannel: string | null;
@@ -55,6 +58,7 @@ export function buildProductSalesSummaries(events: SaleItemEvent[]): ProductSale
     quantity: number;
     orderIds: Set<string>;
     revenue: number;
+    firstSoldAt: string;
     lastSoldAt: string;
     revenueByStore: Map<string, number>;
     revenueByChannel: Map<string, number>;
@@ -66,6 +70,7 @@ export function buildProductSalesSummaries(events: SaleItemEvent[]): ProductSale
       quantity: 0,
       orderIds: new Set<string>(),
       revenue: 0,
+      firstSoldAt: e.orderedAt,
       lastSoldAt: e.orderedAt,
       revenueByStore: new Map<string, number>(),
       revenueByChannel: new Map<string, number>(),
@@ -74,6 +79,7 @@ export function buildProductSalesSummaries(events: SaleItemEvent[]): ProductSale
     acc.orderIds.add(e.orderId);
     acc.revenue += e.totalPrice;
     if (e.orderedAt > acc.lastSoldAt) acc.lastSoldAt = e.orderedAt;
+    if (e.orderedAt < acc.firstSoldAt) acc.firstSoldAt = e.orderedAt;
     acc.revenueByStore.set(e.storeName, (acc.revenueByStore.get(e.storeName) ?? 0) + e.totalPrice);
     acc.revenueByChannel.set(e.channel, (acc.revenueByChannel.get(e.channel) ?? 0) + e.totalPrice);
     byName.set(e.productName, acc);
@@ -97,10 +103,27 @@ export function buildProductSalesSummaries(events: SaleItemEvent[]): ProductSale
     orders: acc.orderIds.size,
     revenue: acc.revenue,
     avgPrice: acc.quantity > 0 ? acc.revenue / acc.quantity : null,
+    firstSoldAt: acc.firstSoldAt,
     lastSoldAt: acc.lastSoldAt,
     topStoreName: topKey(acc.revenueByStore),
     topChannel: topKey(acc.revenueByChannel),
   }));
+}
+
+const WEEKDAY_MAP: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+
+/** Dia da semana (0=domingo..6=sábado) de um evento no fuso da aplicação —
+ * mesma convenção de [[WEEKDAY_LABELS]] em sales-timeseries.ts. */
+function weekdayOf(iso: string): number {
+  const formatter = new Intl.DateTimeFormat("en-US", { timeZone: APP_TIMEZONE, weekday: "short" });
+  return WEEKDAY_MAP[formatter.format(new Date(iso))] ?? 0;
+}
+
+/** Filtro compacto "Todos | Dom | Seg | ... | Sáb" — só faz sentido exibir
+ * na tela quando o período selecionado abrange mais de um dia. */
+export function filterByWeekday(events: SaleItemEvent[], weekday: number | null): SaleItemEvent[] {
+  if (weekday === null) return events;
+  return events.filter((e) => weekdayOf(e.orderedAt) === weekday);
 }
 
 export interface OverallIndicators {

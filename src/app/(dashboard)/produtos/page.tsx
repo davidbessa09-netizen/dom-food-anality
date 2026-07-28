@@ -147,12 +147,8 @@ export default async function ProductsPage({
   if (tab === "vendidos") {
     return (
       <div className="space-y-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Produtos</h1>
-          <p className="text-sm text-muted-foreground">O que está vendendo agora, quanto faturou e onde.</p>
-        </div>
         <PageTabs tabs={TABS} current={tab} buildHref={buildHref} />
-        <LiveSalesTab brands={(brands ?? []).map((b) => ({ id: b.id, name: b.name }))} />
+        <LiveSalesTab />
       </div>
     );
   }
