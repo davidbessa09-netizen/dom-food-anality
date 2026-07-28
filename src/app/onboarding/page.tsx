@@ -6,7 +6,7 @@ const STEPS = [
   "Criar o projeto Supabase e rodar supabase/schema.sql",
   "Criar seu usuário admin em Authentication → Users",
   "Inserir seu vínculo em user_organizations com role = admin_geral",
-  "Rodar o seed de demonstração para ver o dashboard populado (opcional)",
+  "Conectar uma integração (Anota AI/iFood) e sincronizar suas lojas",
   "Fazer login e explorar o menu lateral",
 ];
 

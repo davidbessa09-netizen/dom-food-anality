@@ -1,21 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MultiSelectFilter } from "@/components/filters/multi-select-filter";
 import { DateRangePicker } from "@/components/dashboard/date-range-picker";
-import { ProductAutocomplete } from "./product-autocomplete";
-import { ProductDetailDrawer } from "./product-detail-drawer";
 import { LiveSalesTable } from "./live-sales-table";
 import { exportLiveSalesCsv } from "@/app/(dashboard)/produtos/live-sales-actions";
 import { getProductsSoldSummary, syncStoresNow, type ProductsSoldData } from "@/app/(dashboard)/produtos/products-sold-actions";
-import type { ProductSalesSummary } from "@/lib/metrics/live-sales";
-import { RefreshCw, Download, AlertTriangle } from "lucide-react";
+import { matchesSearch } from "@/lib/text/normalize";
+import { RefreshCw, Download, AlertTriangle, Search, X } from "lucide-react";
 
 const QUICK_PERIODS: { value: string; label: string }[] = [
   { value: "hoje", label: "Hoje" },
@@ -44,8 +42,8 @@ function formatSyncedAt(iso: string | null): string {
  * "Produtos vendidos" — versão enxuta inspirada no relatório de itens do
  * Anota AI: período, busca de produto, loja (só quando há mais de uma) e
  * uma lista simples ordenada por quantidade. Sem abas internas, sem
- * gráficos, sem cards de indicador — o objetivo é responder rápido
- * "o que vendeu, quanto e quando".
+ * gráficos, sem cards de indicador, sem gaveta lateral — filtros ficam
+ * sempre visíveis na própria página e o detalhe do produto expande inline.
  */
 export function LiveSalesTab() {
   const router = useRouter();
@@ -56,7 +54,6 @@ export function LiveSalesTab() {
   const periodPreset = searchParams.get("period") ?? "30d";
   const customFrom = searchParams.get("from") ?? undefined;
   const customTo = searchParams.get("to") ?? undefined;
-  const product = searchParams.get("product");
   const weekdayRaw = searchParams.get("weekday");
   const weekday = weekdayRaw !== null ? Number(weekdayRaw) : null;
 
@@ -71,12 +68,15 @@ export function LiveSalesTab() {
   const [errored, setErrored] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [detailProduct, setDetailProduct] = useState<ProductSalesSummary | null>(null);
+  // Busca é estado local puro, derivado da lista já carregada — não passa
+  // pela URL nem por uma nova consulta ao servidor, então sobrevive
+  // intacta a qualquer refresh() (inclusive depois de sincronizar).
+  const [searchInput, setSearchInput] = useState("");
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const result = await getProductsSoldSummary({ storeIds, periodPreset, customFrom, customTo, product, weekday });
+      const result = await getProductsSoldSummary({ storeIds, periodPreset, customFrom, customTo, product: null, weekday });
       setData(result);
       setErrored(false);
     } catch {
@@ -85,7 +85,7 @@ export function LiveSalesTab() {
       setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storesRaw, periodPreset, customFrom, customTo, product, weekday]);
+  }, [storesRaw, periodPreset, customFrom, customTo, weekday]);
 
   useEffect(() => {
     const timer = setTimeout(refresh, 0);
@@ -135,7 +135,7 @@ export function LiveSalesTab() {
           payment: null,
           fulfillment: null,
           status: null,
-          product,
+          product: null,
           active: null,
           hasPrice: null,
           itemType: "principal",
@@ -154,7 +154,24 @@ export function LiveSalesTab() {
   }
 
   const hasMultipleStores = (data?.storeOptions.length ?? 0) > 1;
-  const totalUnits = data?.totalUnits ?? 0;
+
+  // Lista filtrada derivada da lista original — nunca modifica os dados
+  // carregados, só decide o que é exibido. Também casa pelo nome de
+  // qualquer variação/correspondência aprovada do produto (ver
+  // variantsByProduct), não só pelo nome canônico exibido na linha.
+  const filteredSummaries = useMemo(() => {
+    const summaries = data?.summaries ?? [];
+    if (!searchInput.trim()) return summaries;
+    return summaries.filter((s) => {
+      if (matchesSearch(s.productName, searchInput)) return true;
+      const variants = data?.variantsByProduct[s.productName] ?? [];
+      return variants.some((v) => matchesSearch(v.originalName, searchInput));
+    });
+  }, [data, searchInput]);
+
+  const totalUnits = filteredSummaries.reduce((sum, s) => sum + s.quantity, 0);
+  const hasSearch = searchInput.trim().length > 0;
+  const noSearchResults = hasSearch && filteredSummaries.length === 0 && (data?.summaries.length ?? 0) > 0;
 
   return (
     <div className="space-y-4">
@@ -197,22 +214,32 @@ export function LiveSalesTab() {
         </div>
         <DateRangePicker from={customFrom} to={customTo} />
 
-        <ProductAutocomplete options={data?.productOptions ?? []} onSelect={(name) => commitParams({ product: name })} />
-        {product && (
-          <Badge variant="secondary" className="gap-1">
-            {product}
-            <button type="button" onClick={() => commitParams({ product: null })} aria-label="Remover filtro de produto">
-              ×
+        <div className="relative w-56">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Buscar produto..."
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            className="pl-8 pr-8"
+          />
+          {searchInput && (
+            <button
+              type="button"
+              onClick={() => setSearchInput("")}
+              aria-label="Limpar busca"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              <X className="size-3.5" />
             </button>
-          </Badge>
-        )}
+          )}
+        </div>
 
         {hasMultipleStores && (
           <MultiSelectFilter
             paramKey="stores"
             options={(data?.storeOptions ?? []).map((s) => ({ value: s.id, label: s.name }))}
             selected={storeIds}
-            placeholder="Loja"
+            placeholder="Todas as lojas"
             searchPlaceholder="Buscar loja..."
           />
         )}
@@ -257,6 +284,15 @@ export function LiveSalesTab() {
             </Button>
           </CardContent>
         </Card>
+      ) : noSearchResults ? (
+        <Card>
+          <CardContent className="flex flex-col items-center gap-2 py-10 text-center">
+            <p className="text-sm font-medium">Nenhum produto encontrado para &quot;{searchInput}&quot;.</p>
+            <button type="button" onClick={() => setSearchInput("")} className="text-sm font-medium text-primary hover:underline">
+              Limpar pesquisa
+            </button>
+          </CardContent>
+        </Card>
       ) : data && data.summaries.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
@@ -269,16 +305,8 @@ export function LiveSalesTab() {
           </CardContent>
         </Card>
       ) : (
-        <LiveSalesTable summaries={data?.summaries ?? []} onViewDetails={(s) => setDetailProduct(s)} />
+        <LiveSalesTable summaries={filteredSummaries} events={data?.events ?? []} variantsByProduct={data?.variantsByProduct ?? {}} />
       )}
-
-      <ProductDetailDrawer
-        open={detailProduct !== null}
-        onOpenChange={(o) => !o && setDetailProduct(null)}
-        summary={detailProduct}
-        events={data?.events ?? []}
-        variants={detailProduct ? data?.variantsByProduct[detailProduct.productName] ?? [] : []}
-      />
     </div>
   );
 }

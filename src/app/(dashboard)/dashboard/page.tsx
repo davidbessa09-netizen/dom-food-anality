@@ -416,7 +416,7 @@ export default async function ExecutiveDashboardPage({
             <p className="text-sm text-muted-foreground">
               {hasOrders
                 ? "Quanto vendeu, quantos pedidos, ticket médio e a principal oportunidade do período."
-                : "Sem pedidos no período — importe pedidos em Importações ou rode o seed de demonstração."}
+                : "Nenhuma informação disponível. Sincronize suas lojas para começar."}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
