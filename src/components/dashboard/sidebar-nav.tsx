@@ -50,21 +50,23 @@ export function SidebarNav({
       className="hidden h-screen shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground transition-all duration-200 md:flex"
       style={{ width: collapsed ? 72 : 256, minWidth: collapsed ? 72 : 256 }}
     >
-      <div className="flex items-center justify-between px-3 py-4">
-        {!collapsed && (
-          <div className="flex items-center gap-2 truncate">
-            <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary text-xs font-bold text-primary-foreground">
-              D
-            </span>
-            <span className="truncate font-heading text-sm font-semibold">DOM Food Analytics</span>
-          </div>
+      <div className={cn("flex items-center gap-2 px-3 py-4", collapsed ? "flex-col" : "justify-between")}>
+        {collapsed ? (
+          <span className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-md bg-black">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/dom-logo-symbol.png" alt="DOM — Domínio Digital" className="size-full object-contain p-1" />
+          </span>
+        ) : (
+          <span className="flex h-10 min-w-0 flex-1 items-center overflow-hidden rounded-md bg-black px-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/dom-logo-full.png" alt="DOM — Domínio Digital" className="h-full w-full object-contain" />
+          </span>
         )}
         <Button
           variant="ghost"
           size="icon-sm"
           onClick={() => setCollapsed((c) => !c)}
           aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
-          className={collapsed ? "mx-auto" : undefined}
         >
           {collapsed ? <ChevronsRight className="size-4" /> : <ChevronsLeft className="size-4" />}
         </Button>
