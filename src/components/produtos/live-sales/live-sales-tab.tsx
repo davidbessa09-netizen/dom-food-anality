@@ -134,7 +134,7 @@ export function LiveSalesTab() {
           customTo,
           payment: null,
           fulfillment: null,
-          status: "concluido",
+          status: null,
           product,
           active: null,
           hasPrice: null,

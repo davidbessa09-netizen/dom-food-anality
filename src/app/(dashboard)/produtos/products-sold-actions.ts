@@ -3,7 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { getLiveSalesData, type LiveSalesFilters } from "./live-sales-actions";
 import { syncAnotaAiIntegration } from "@/lib/integrations/anota-ai/sync";
-import { filterByStatusMode, filterByWeekday, buildProductSalesSummaries, type SaleItemEvent, type ProductSalesSummary } from "@/lib/metrics/live-sales";
+import { filterAccountable, filterByWeekday, buildProductSalesSummaries, type SaleItemEvent, type ProductSalesSummary } from "@/lib/metrics/live-sales";
 
 export interface ProductsSoldFilters {
   storeIds: string[];
@@ -30,6 +30,12 @@ export interface ProductsSoldData {
  * regra de período (baseada em `ordered_at`, a data REAL da venda, nunca em
  * `synced_at`), mas sem os filtros avançados (canal, categoria, pagamento,
  * tipo, faixa de preço, ativo/inativo) que essa tela não expõe.
+ *
+ * Importante: NÃO filtra por status="concluido" na consulta — isso deixava
+ * "Produtos vendidos" divergente de Vendas → Transações, que por padrão
+ * lista pedido de QUALQUER status. Busca todos os status e aplica a mesma
+ * regra de "pedido contabilizável" (ver [[filterAccountable]]): tudo que não
+ * foi cancelado conta como venda, incluindo pedidos ainda em preparo.
  */
 export async function getProductsSoldSummary(filters: ProductsSoldFilters): Promise<ProductsSoldData> {
   const liveSalesFilters: LiveSalesFilters = {
@@ -42,7 +48,7 @@ export async function getProductsSoldSummary(filters: ProductsSoldFilters): Prom
     customTo: filters.customTo,
     payment: null,
     fulfillment: null,
-    status: "concluido",
+    status: null,
     product: filters.product,
     active: null,
     hasPrice: null,
@@ -50,8 +56,8 @@ export async function getProductsSoldSummary(filters: ProductsSoldFilters): Prom
   };
 
   const data = await getLiveSalesData(liveSalesFilters);
-  const confirmedEvents = filterByStatusMode(data.currentEvents, "confirmadas");
-  const events = filterByWeekday(confirmedEvents, filters.weekday);
+  const accountableEvents = filterAccountable(data.currentEvents);
+  const events = filterByWeekday(accountableEvents, filters.weekday);
   const summaries = buildProductSalesSummaries(events).sort((a, b) => b.quantity - a.quantity);
   const totalUnits = summaries.reduce((sum, s) => sum + s.quantity, 0);
 

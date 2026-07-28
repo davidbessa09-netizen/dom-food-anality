@@ -38,6 +38,17 @@ export function filterByStatusMode(events: SaleItemEvent[], mode: SaleStatusMode
   return events.filter((e) => set.has(e.status) && (includeAddons || !e.isAddon));
 }
 
+/** Estados comerciais válidos — tudo que NÃO é cancelado. Usado como regra
+ * ÚNICA e COMPARTILHADA de "pedido contabilizável" entre Vendas →
+ * Transações (que já lista todo status por padrão) e Produtos vendidos.
+ * Um pedido "em preparo" já é uma venda real em andamento — só um
+ * cancelamento explícito remove o pedido da contagem. */
+const ACCOUNTABLE_STATUSES = new Set(["criado", "confirmado", "em_preparo", "saiu_para_entrega", "concluido"]);
+
+export function filterAccountable(events: SaleItemEvent[], includeAddons = false): SaleItemEvent[] {
+  return events.filter((e) => ACCOUNTABLE_STATUSES.has(e.status) && (includeAddons || !e.isAddon));
+}
+
 export interface ProductSalesSummary {
   productName: string;
   quantity: number;

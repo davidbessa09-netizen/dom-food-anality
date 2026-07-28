@@ -51,10 +51,10 @@ function ProductsCell({ row }: { row: TransactionRow }) {
   const [expanded, setExpanded] = useState(false);
   const main = row.items.filter((i) => !i.isAddon);
   if (main.length <= 1) {
-    return <span className="text-xs">{itemsSummary(row.items)}</span>;
+    return <span className="block truncate text-xs">{itemsSummary(row.items)}</span>;
   }
   return (
-    <div className="max-w-xs">
+    <div>
       {expanded ? (
         <ul className="space-y-0.5 text-xs">
           {row.items.map((i, idx) => (
@@ -64,12 +64,12 @@ function ProductsCell({ row }: { row: TransactionRow }) {
           ))}
         </ul>
       ) : (
-        <span className="truncate text-xs">{itemsSummary(row.items)}</span>
+        <span className="block truncate text-xs">{itemsSummary(row.items)}</span>
       )}
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="mt-0.5 inline-flex items-center gap-0.5 text-xs font-medium text-primary hover:underline"
+        className="mt-0.5 flex items-center gap-0.5 whitespace-nowrap text-xs font-medium text-primary hover:underline"
       >
         {expanded ? (
           <>
@@ -175,32 +175,40 @@ export function TransactionsTable({ rows }: { rows: TransactionRow[] }) {
   return (
     <>
       <div className="overflow-x-auto rounded-md border">
-        <Table>
+        <Table className="w-full table-fixed">
           <TableHeader>
             <TableRow>
-              <TableHead>Data</TableHead>
-              <TableHead>Loja</TableHead>
-              <TableHead>Cliente</TableHead>
+              <TableHead className="w-24">Data</TableHead>
+              <TableHead className="w-28">Loja</TableHead>
+              <TableHead className="w-28">Cliente</TableHead>
               <TableHead>Produto(s)</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Pagamento</TableHead>
-              <TableHead className="text-right">Valor</TableHead>
-              <TableHead className="w-10" />
+              <TableHead className="w-28">Status</TableHead>
+              <TableHead className="w-32">Pagamento</TableHead>
+              <TableHead className="w-24 text-right">Valor</TableHead>
+              <TableHead className="w-20" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {rows.map((row) => (
               <TableRow key={row.id}>
-                <TableCell className="whitespace-nowrap text-xs">{formatDateCompact(row.orderedAt)}</TableCell>
-                <TableCell className="whitespace-nowrap text-xs">{row.storeName}</TableCell>
-                <TableCell className="whitespace-nowrap">{row.customerName ?? "Não identificado"}</TableCell>
+                <TableCell className="truncate whitespace-nowrap text-xs">{formatDateCompact(row.orderedAt)}</TableCell>
+                <TableCell className="truncate text-xs" title={row.storeName}>
+                  {row.storeName}
+                </TableCell>
+                <TableCell className="truncate" title={row.customerName ?? "Não identificado"}>
+                  {row.customerName ?? "Não identificado"}
+                </TableCell>
                 <TableCell>
                   <ProductsCell row={row} />
                 </TableCell>
                 <TableCell className="text-xs">
-                  <Badge variant="outline">{row.statusLabel}</Badge>
+                  <Badge variant="outline" className="whitespace-nowrap">
+                    {row.statusLabel}
+                  </Badge>
                 </TableCell>
-                <TableCell className="whitespace-nowrap text-xs">{row.paymentLabel}</TableCell>
+                <TableCell className="truncate text-xs" title={row.paymentLabel}>
+                  {row.paymentLabel}
+                </TableCell>
                 <TableCell className="text-right tabular-nums whitespace-nowrap">{formatCurrency(row.grossAmount)}</TableCell>
                 <TableCell>
                   <Button variant="ghost" size="sm" onClick={() => setOpenRow(row)}>

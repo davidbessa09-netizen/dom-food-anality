@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   filterByStatusMode,
+  filterAccountable,
   buildProductSalesSummaries,
   buildOverallIndicators,
   buildGrowthComparison,
@@ -43,6 +44,28 @@ describe("filterByStatusMode", () => {
     const events = [makeEvent({ isAddon: true })];
     expect(filterByStatusMode(events, "confirmadas")).toHaveLength(0);
     expect(filterByStatusMode(events, "confirmadas", true)).toHaveLength(1);
+  });
+});
+
+describe("filterAccountable", () => {
+  it("inclui todo status comercial válido (não só concluído) e exclui só cancelado", () => {
+    const events = [
+      makeEvent({ orderId: "o1", status: "criado" }),
+      makeEvent({ orderId: "o2", status: "confirmado" }),
+      makeEvent({ orderId: "o3", status: "em_preparo" }),
+      makeEvent({ orderId: "o4", status: "saiu_para_entrega" }),
+      makeEvent({ orderId: "o5", status: "concluido" }),
+      makeEvent({ orderId: "o6", status: "cancelado" }),
+    ];
+    const result = filterAccountable(events);
+    expect(result).toHaveLength(5);
+    expect(result.some((e) => e.status === "cancelado")).toBe(false);
+  });
+
+  it("exclui adicionais por padrão, como filterByStatusMode", () => {
+    const events = [makeEvent({ status: "em_preparo", isAddon: true })];
+    expect(filterAccountable(events)).toHaveLength(0);
+    expect(filterAccountable(events, true)).toHaveLength(1);
   });
 });
 
