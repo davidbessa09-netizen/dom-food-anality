@@ -15,7 +15,7 @@ import { LiveSalesTable } from "./live-sales-table";
 import { exportLiveSalesCsv } from "@/app/(dashboard)/produtos/live-sales-actions";
 import { getProductsSoldSummary, syncStoresNow, type ProductsSoldData } from "@/app/(dashboard)/produtos/products-sold-actions";
 import type { ProductSalesSummary } from "@/lib/metrics/live-sales";
-import { RefreshCw, Download } from "lucide-react";
+import { RefreshCw, Download, AlertTriangle } from "lucide-react";
 
 const QUICK_PERIODS: { value: string; label: string }[] = [
   { value: "hoje", label: "Hoje" },
@@ -68,6 +68,7 @@ export function LiveSalesTab() {
 
   const [data, setData] = useState<ProductsSoldData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [errored, setErrored] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [detailProduct, setDetailProduct] = useState<ProductSalesSummary | null>(null);
@@ -77,6 +78,9 @@ export function LiveSalesTab() {
     try {
       const result = await getProductsSoldSummary({ storeIds, periodPreset, customFrom, customTo, product, weekday });
       setData(result);
+      setErrored(false);
+    } catch {
+      setErrored(true);
     } finally {
       setLoading(false);
     }
@@ -241,6 +245,18 @@ export function LiveSalesTab() {
             <Skeleton key={i} className="h-10 w-full" />
           ))}
         </div>
+      ) : errored ? (
+        <Card>
+          <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
+            <AlertTriangle className="size-6 text-danger" />
+            <p className="text-sm font-medium">Não foi possível carregar os produtos vendidos.</p>
+            <p className="text-sm text-muted-foreground">Verifique sua conexão e tente novamente.</p>
+            <Button size="sm" variant="outline" onClick={refresh} disabled={loading}>
+              <RefreshCw className={loading ? "size-3.5 animate-spin" : "size-3.5"} />
+              Tentar novamente
+            </Button>
+          </CardContent>
+        </Card>
       ) : data && data.summaries.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-10 text-center">

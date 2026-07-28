@@ -232,31 +232,51 @@ export default async function ProductsPage({
         <PageTabs tabs={TABS} current={tab} buildHref={buildHref} />
       </div>
 
-      <div className="space-y-2">
+      {tab === "desempenho" && (
+        // Desempenho é só ranking/comparação — período e loja bastam pra
+        // recortar a análise. Os demais filtros (canal, categoria, preço,
+        // status) ficam só no Catálogo, onde fazem sentido pra navegar o
+        // cadastro de produtos.
         <GlobalFilterBar
-          fields={["brand", "stores", "channel", "category", "period", "fulfillment"]}
+          fields={(brands ?? []).length > 1 ? ["brand", "stores", "period"] : ["stores", "period"]}
           brands={(brands ?? []).map((b) => ({ id: b.id, name: b.name }))}
           stores={(stores ?? []).map((s) => ({ id: s.id, name: s.name }))}
-          categories={(categories ?? []).map((c) => ({ id: c.id, name: c.canonical_name }))}
           currentBrandId={selectedBrandId}
           currentStoreIds={selectedStoreIds}
-          currentChannel={filters.channel}
           currentPeriodPreset={preset}
           currentFrom={customFrom}
           currentTo={customTo}
-          currentFulfillment={filters.fulfillment}
-          currentCategoryId={validSelectedCategoryId}
+          enableSaveView={false}
         />
-        <ProdutosExtraFilters
-          currentSearch={search}
-          currentMinPrice={minPrice}
-          currentMaxPrice={maxPrice}
-          currentHasSales={hasSales}
-          currentHasPrice={hasPrice}
-          currentActive={active}
-          currentItemType={itemType === "principal" ? null : itemType}
-        />
-      </div>
+      )}
+
+      {tab === "catalogo" && (
+        <div className="space-y-2">
+          <GlobalFilterBar
+            fields={["brand", "stores", "channel", "category", "period", "fulfillment"]}
+            brands={(brands ?? []).map((b) => ({ id: b.id, name: b.name }))}
+            stores={(stores ?? []).map((s) => ({ id: s.id, name: s.name }))}
+            categories={(categories ?? []).map((c) => ({ id: c.id, name: c.canonical_name }))}
+            currentBrandId={selectedBrandId}
+            currentStoreIds={selectedStoreIds}
+            currentChannel={filters.channel}
+            currentPeriodPreset={preset}
+            currentFrom={customFrom}
+            currentTo={customTo}
+            currentFulfillment={filters.fulfillment}
+            currentCategoryId={validSelectedCategoryId}
+          />
+          <ProdutosExtraFilters
+            currentSearch={search}
+            currentMinPrice={minPrice}
+            currentMaxPrice={maxPrice}
+            currentHasSales={hasSales}
+            currentHasPrice={hasPrice}
+            currentActive={active}
+            currentItemType={itemType === "principal" ? null : itemType}
+          />
+        </div>
+      )}
 
       {tab === "desempenho" && (
         <div className="space-y-4">
