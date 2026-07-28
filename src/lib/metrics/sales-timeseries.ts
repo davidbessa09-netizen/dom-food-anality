@@ -71,6 +71,51 @@ export function salesByDay(orders: SalesOrderInput[]): DaySalesRow[] {
   return Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
 }
 
+/** Segunda-feira da semana ISO de uma data "yyyy-MM-dd" — pura aritmética de
+ * calendário (sem envolver fuso do runtime, mesmo cuidado de
+ * [[formatDayLabel]]). */
+function isoWeekStart(dateStr: string): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  const day = date.getUTCDay();
+  const diff = (day === 0 ? -6 : 1) - day;
+  date.setUTCDate(date.getUTCDate() + diff);
+  return date.toISOString().slice(0, 10);
+}
+
+/** Re-agrupa uma série diária (já sem cancelados) por semana — usado pela
+ * alternância diário/semanal/mensal do gráfico principal do dashboard. */
+export function groupDailyByWeek(daily: DaySalesRow[]): DaySalesRow[] {
+  const byWeek = new Map<string, DaySalesRow>();
+  for (const row of daily) {
+    const weekStart = isoWeekStart(row.date);
+    const existing = byWeek.get(weekStart);
+    if (existing) {
+      existing.revenue += row.revenue;
+      existing.orders += row.orders;
+    } else {
+      byWeek.set(weekStart, { date: weekStart, revenue: row.revenue, orders: row.orders });
+    }
+  }
+  return Array.from(byWeek.values()).sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/** Re-agrupa uma série diária por mês (chave "yyyy-MM", data-base no dia 1). */
+export function groupDailyByMonth(daily: DaySalesRow[]): DaySalesRow[] {
+  const byMonth = new Map<string, DaySalesRow>();
+  for (const row of daily) {
+    const monthKey = row.date.slice(0, 7);
+    const existing = byMonth.get(monthKey);
+    if (existing) {
+      existing.revenue += row.revenue;
+      existing.orders += row.orders;
+    } else {
+      byMonth.set(monthKey, { date: `${monthKey}-01`, revenue: row.revenue, orders: row.orders });
+    }
+  }
+  return Array.from(byMonth.values()).sort((a, b) => a.date.localeCompare(b.date));
+}
+
 export function salesByHour(orders: SalesOrderInput[]): HourSalesRow[] {
   const byHour = new Map<number, HourSalesRow>();
   for (const o of orders) {

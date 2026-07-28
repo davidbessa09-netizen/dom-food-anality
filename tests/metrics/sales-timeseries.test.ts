@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { salesByDay, salesByHour, salesByWeekday, type SalesOrderInput } from "@/lib/metrics/sales-timeseries";
+import { salesByDay, salesByHour, salesByWeekday, groupDailyByWeek, groupDailyByMonth, type SalesOrderInput } from "@/lib/metrics/sales-timeseries";
 
 // 2026-07-01T12:00:00Z = 2026-07-01 09:00 em America/Sao_Paulo (UTC-3), quarta-feira
 const orders: SalesOrderInput[] = [
@@ -20,6 +20,39 @@ describe("salesByDay", () => {
   it("mantém dias diferentes separados", () => {
     const rows = salesByDay(orders);
     expect(rows).toHaveLength(2);
+  });
+});
+
+describe("groupDailyByWeek", () => {
+  it("agrupa dias da mesma semana ISO (segunda a domingo) num só ponto", () => {
+    // 2026-07-01 é quarta, 2026-07-02 é quinta — mesma semana.
+    const daily = salesByDay(orders);
+    const weekly = groupDailyByWeek(daily);
+    expect(weekly).toHaveLength(1);
+    expect(weekly[0].revenue).toBe(230);
+    expect(weekly[0].orders).toBe(3);
+  });
+
+  it("separa semanas diferentes", () => {
+    const daily = [
+      { date: "2026-07-01", revenue: 100, orders: 1 },
+      { date: "2026-07-13", revenue: 200, orders: 2 }, // semana seguinte
+    ];
+    expect(groupDailyByWeek(daily)).toHaveLength(2);
+  });
+});
+
+describe("groupDailyByMonth", () => {
+  it("agrupa dias do mesmo mês", () => {
+    const daily = [
+      { date: "2026-07-01", revenue: 100, orders: 1 },
+      { date: "2026-07-28", revenue: 50, orders: 1 },
+      { date: "2026-08-01", revenue: 20, orders: 1 },
+    ];
+    const monthly = groupDailyByMonth(daily);
+    expect(monthly).toHaveLength(2);
+    expect(monthly.find((m) => m.date === "2026-07-01")?.revenue).toBe(150);
+    expect(monthly.find((m) => m.date === "2026-08-01")?.revenue).toBe(20);
   });
 });
 

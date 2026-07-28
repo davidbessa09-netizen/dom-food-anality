@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Info, TrendingDown, TrendingUp, Minus } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Sensitive } from "@/components/dashboard/privacy-context";
 
 export type KpiState = "positive" | "neutral" | "critical" | "unavailable";
 
@@ -73,6 +74,10 @@ export interface KpiCardProps {
   trend?: number[];
   /** Texto exibido no lugar da base de cálculo quando state === "unavailable". */
   unavailableReason?: string;
+  /** Marca este KPI como valor monetário sensível — mascarado quando o
+   * usuário ativa "Ocultar valores" (reuniões, capturas de tela, locais
+   * públicos). Contagens e percentuais nunca são sensíveis. */
+  sensitive?: boolean;
 }
 
 export function KpiCard({
@@ -85,6 +90,7 @@ export function KpiCard({
   growthPercent,
   trend,
   unavailableReason,
+  sensitive = false,
 }: KpiCardProps) {
   return (
     <Card className={cn(state === "unavailable" && "border-dashed")}>
@@ -109,7 +115,7 @@ export function KpiCard({
       <CardContent className="space-y-1.5">
         <div className="flex items-end justify-between gap-2">
           <span className={cn("text-2xl font-semibold tabular-nums", state === "unavailable" && "text-muted-foreground")}>
-            {value}
+            {sensitive ? <Sensitive value={value} /> : value}
           </span>
           {trend && trend.length >= 2 && <Sparkline data={trend} />}
         </div>

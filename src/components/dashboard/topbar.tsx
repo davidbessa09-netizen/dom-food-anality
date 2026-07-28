@@ -26,6 +26,21 @@ const ROLE_LABELS: Record<string, string> = {
   somente_leitura: "Somente leitura",
 };
 
+/** Deriva um nome de exibição e iniciais a partir do e-mail — não há campo
+ * de nome completo no perfil ainda, então usa a parte local do e-mail
+ * (antes do @), capitalizando o primeiro token (separado por ponto/underline). */
+function displayNameFromEmail(email: string): { firstName: string; initials: string } {
+  const local = email.split("@")[0] ?? email;
+  const tokens = local.split(/[._-]/).filter(Boolean);
+  const first = tokens[0] ?? local;
+  const firstName = first.charAt(0).toUpperCase() + first.slice(1);
+  const initials =
+    tokens.length > 1
+      ? `${tokens[0][0] ?? ""}${tokens[1][0] ?? ""}`.toUpperCase()
+      : first.slice(0, 2).toUpperCase();
+  return { firstName, initials };
+}
+
 function timeAgo(iso: string | null): string {
   if (!iso) return "nunca sincronizado";
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -56,6 +71,7 @@ export function Topbar({
   const pathname = usePathname();
   const groups = getVisibleNavGroups(isAdmin);
   const activeItem = findActiveNavItem(pathname, groups);
+  const { firstName, initials } = displayNameFromEmail(email);
 
   return (
     <header className="flex h-14 items-center justify-between gap-2 border-b bg-background px-4">
@@ -145,7 +161,10 @@ export function Topbar({
           <DropdownMenuTrigger
             render={<Button variant="ghost" size="sm" />}
           >
-            <span className="max-w-32 truncate">{email}</span>
+            <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary">
+              {initials}
+            </span>
+            <span className="hidden max-w-24 truncate sm:inline">{firstName}</span>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuLabel>
