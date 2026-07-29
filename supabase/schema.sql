@@ -1248,3 +1248,84 @@ create policy user_profiles_select_admin on user_profiles for select
 -- insert/update pro cliente comum.
 
 create index idx_user_profiles_username on user_profiles (username);
+
+-- ---------------------------------------------------------------------
+-- Sincronização automática a cada 5 minutos (ver migrations 0015/0016)
+-- ---------------------------------------------------------------------
+create extension if not exists pg_cron with schema pg_catalog;
+create extension if not exists pg_net with schema extensions;
+
+create table sync_lock (
+  job_name text primary key,
+  locked_at timestamptz not null,
+  locked_by text not null,
+  expires_at timestamptz not null
+);
+
+alter table sync_lock enable row level security;
+
+create or replace function try_acquire_sync_lock(p_job_name text, p_owner text, p_ttl_seconds int default 240)
+returns boolean
+language plpgsql
+security definer
+as $$
+declare
+  did_acquire boolean := false;
+begin
+  insert into sync_lock (job_name, locked_at, locked_by, expires_at)
+  values (p_job_name, now(), p_owner, now() + (p_ttl_seconds || ' seconds')::interval)
+  on conflict (job_name) do update
+    set locked_at = excluded.locked_at,
+        locked_by = excluded.locked_by,
+        expires_at = excluded.expires_at
+    where sync_lock.expires_at < now()
+  returning true into did_acquire;
+
+  return coalesce(did_acquire, false);
+end;
+$$;
+
+create or replace function release_sync_lock(p_job_name text, p_owner text)
+returns void
+language sql
+security definer
+as $$
+  update sync_lock set expires_at = now() - interval '1 second'
+  where job_name = p_job_name and locked_by = p_owner;
+$$;
+
+create table sync_runs (
+  id uuid primary key default gen_random_uuid(),
+  trigger_type text not null check (trigger_type in ('scheduled', 'manual', 'retry', 'reconciliation')),
+  started_at timestamptz not null default now(),
+  finished_at timestamptz,
+  status text not null default 'running' check (status in ('running', 'success', 'partial_success', 'failed', 'skipped_locked')),
+  stores_total int not null default 0,
+  stores_success int not null default 0,
+  stores_failed int not null default 0,
+  orders_received int not null default 0,
+  orders_inserted int not null default 0,
+  orders_updated int not null default 0,
+  items_received int not null default 0,
+  items_inserted int not null default 0,
+  items_updated int not null default 0,
+  items_failed int not null default 0,
+  error_message text,
+  duration_ms int,
+  created_at timestamptz not null default now()
+);
+
+alter table sync_runs enable row level security;
+
+create policy sync_runs_select on sync_runs for select
+  using (
+    exists (
+      select 1 from user_organizations uo
+      where uo.user_id = auth.uid() and uo.role in ('admin_geral', 'gestor_marca', 'gestor_loja')
+    )
+  );
+
+create index idx_sync_runs_started_at on sync_runs (started_at desc);
+
+alter table integrations add column if not exists last_sync_started_at timestamptz;
+alter table integrations add column if not exists last_order_synced_at timestamptz;

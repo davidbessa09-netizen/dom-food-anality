@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { getLiveSalesData, type LiveSalesFilters } from "./live-sales-actions";
 import { syncAnotaAiIntegration } from "@/lib/integrations/anota-ai/sync";
+import { tryAcquireSyncLock, releaseSyncLock } from "@/lib/integrations/sync-lock";
 import { filterAccountable, filterByWeekday, buildProductSalesSummaries, type SaleItemEvent, type ProductSalesSummary } from "@/lib/metrics/live-sales";
 
 export interface ProductsSoldFilters {
@@ -83,48 +84,68 @@ export interface SyncStoresResult {
  * Sincroniza todas as integrações ativas das lojas no escopo — usada pelo
  * botão "Sincronizar" desta tela (não tem um único integrationId como em
  * /integracoes, porque aqui o escopo é por loja/todas as lojas visíveis).
+ *
+ * Disputa o MESMO lock (`sync_lock`, ver [[tryAcquireSyncLock]]) que a rota
+ * de CRON automática — se um ciclo agendado já estiver em andamento, este
+ * botão não roda por cima: retorna "Sincronização já está em andamento."
+ * em vez de arriscar gravar por cima do mesmo pedido ao mesmo tempo.
  */
 export async function syncStoresNow(storeIds: string[]): Promise<SyncStoresResult> {
   const supabase = await createClient();
   const fallback = ["00000000-0000-0000-0000-000000000000"];
 
-  const { data: channels } = await supabase
-    .from("sales_channels")
-    .select("id")
-    .in("store_id", storeIds.length ? storeIds : fallback);
-  const channelIds = (channels ?? []).map((c) => c.id);
-
-  const { data: integrations } = await supabase
-    .from("integrations")
-    .select("id")
-    .in("sales_channel_id", channelIds.length ? channelIds : fallback)
-    .eq("is_active", true);
-
-  const errors: string[] = [];
-  let ordersProcessed = 0;
-
-  for (const integration of integrations ?? []) {
-    const result = await syncAnotaAiIntegration(supabase, integration.id, "manual");
-    if (result.ok) {
-      ordersProcessed += result.ordersProcessed;
-    } else if (result.error) {
-      errors.push(result.error);
-    }
+  const lockOwner = `manual-${Date.now()}`;
+  const acquired = await tryAcquireSyncLock(supabase, lockOwner);
+  if (!acquired) {
+    return {
+      ok: false,
+      ordersProcessed: 0,
+      lastSyncedAt: null,
+      errors: ["Sincronização já está em andamento."],
+    };
   }
 
-  const integrationIds = (integrations ?? []).map((i) => i.id);
-  const { data: refreshedIntegrations } = await supabase
-    .from("integrations")
-    .select("last_synced_at")
-    .in("id", integrationIds.length ? integrationIds : fallback)
-    .not("last_synced_at", "is", null)
-    .order("last_synced_at", { ascending: false })
-    .limit(1);
+  try {
+    const { data: channels } = await supabase
+      .from("sales_channels")
+      .select("id")
+      .in("store_id", storeIds.length ? storeIds : fallback);
+    const channelIds = (channels ?? []).map((c) => c.id);
 
-  return {
-    ok: errors.length === 0,
-    ordersProcessed,
-    lastSyncedAt: refreshedIntegrations?.[0]?.last_synced_at ?? null,
-    errors,
-  };
+    const { data: integrations } = await supabase
+      .from("integrations")
+      .select("id")
+      .in("sales_channel_id", channelIds.length ? channelIds : fallback)
+      .eq("is_active", true);
+
+    const errors: string[] = [];
+    let ordersProcessed = 0;
+
+    for (const integration of integrations ?? []) {
+      const result = await syncAnotaAiIntegration(supabase, integration.id, "manual");
+      if (result.ok) {
+        ordersProcessed += result.ordersProcessed;
+      } else if (result.error) {
+        errors.push(result.error);
+      }
+    }
+
+    const integrationIds = (integrations ?? []).map((i) => i.id);
+    const { data: refreshedIntegrations } = await supabase
+      .from("integrations")
+      .select("last_synced_at")
+      .in("id", integrationIds.length ? integrationIds : fallback)
+      .not("last_synced_at", "is", null)
+      .order("last_synced_at", { ascending: false })
+      .limit(1);
+
+    return {
+      ok: errors.length === 0,
+      ordersProcessed,
+      lastSyncedAt: refreshedIntegrations?.[0]?.last_synced_at ?? null,
+      errors,
+    };
+  } finally {
+    await releaseSyncLock(supabase, lockOwner);
+  }
 }

@@ -20,6 +20,7 @@ export interface ViewerData {
   totalUnits: number;
   storeOptions: { id: string; name: string }[];
   generatedAt: string;
+  lastDataReceivedAt: string | null;
 }
 
 interface ViewerOrderRow {
@@ -28,6 +29,27 @@ interface ViewerOrderRow {
   status: string;
   store_id: string;
   order_items: { original_name: string; quantity: number; is_addon: boolean }[];
+}
+
+/**
+ * Aproximação de "última sincronização" pro perfil restrito: como esse
+ * papel não tem select em `integrations` (ver migration 0014), usa o
+ * `created_at` mais recente entre os pedidos das lojas autorizadas como
+ * indicador de frescor dos dados — não é o horário exato da última
+ * tentativa, mas reflete quando o dado mais novo realmente chegou.
+ */
+async function getLastDataReceivedAt(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  storeIds: string[]
+): Promise<string | null> {
+  const fallback = ["00000000-0000-0000-0000-000000000000"];
+  const { data } = await supabase
+    .from("orders")
+    .select("created_at")
+    .in("store_id", storeIds.length ? storeIds : fallback)
+    .order("created_at", { ascending: false })
+    .limit(1);
+  return data?.[0]?.created_at ?? null;
 }
 
 /**
@@ -78,11 +100,13 @@ export async function getViewerProductsSold(filters: ViewerFilters): Promise<Vie
 
   const summaries = buildViewerProductSummaries(events);
   const totalUnits = summaries.reduce((sum, s) => sum + s.quantity, 0);
+  const lastDataReceivedAt = await getLastDataReceivedAt(supabase, scopedStoreIds);
 
   return {
     summaries,
     totalUnits,
     storeOptions: (stores ?? []).map((s) => ({ id: s.id, name: s.name })),
     generatedAt: new Date().toISOString(),
+    lastDataReceivedAt,
   };
 }

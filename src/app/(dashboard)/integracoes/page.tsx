@@ -7,6 +7,7 @@ import { CredentialForm } from "./credential-form";
 import { SyncButton } from "./sync-button";
 import { SyncLogViewer } from "./sync-log-viewer";
 import { formatDateTimeBR } from "@/lib/dates/format";
+import { classifySyncFreshness, SYNC_FRESHNESS_LABELS } from "@/lib/integrations/sync-status";
 import type { Brand, Store } from "@/types/database";
 
 interface SalesChannelRow {
@@ -21,6 +22,35 @@ interface IntegrationRow {
   platform: string;
   last_synced_at: string | null;
   last_cursor: string | null;
+  last_sync_started_at: string | null;
+  last_order_synced_at: string | null;
+}
+
+interface SyncRunRow {
+  id: string;
+  trigger_type: string;
+  status: string;
+  started_at: string;
+  finished_at: string | null;
+  stores_total: number | null;
+  stores_success: number | null;
+  stores_failed: number | null;
+  orders_received: number | null;
+}
+
+const RUN_STATUS_LABELS: Record<string, string> = {
+  running: "Rodando",
+  success: "Sucesso",
+  partial_success: "Sucesso parcial",
+  failed: "Falhou",
+  skipped_locked: "Ignorado (já em andamento)",
+};
+
+function runStatusVariant(status: string): "default" | "destructive" | "secondary" | "outline" {
+  if (status === "success") return "default";
+  if (status === "failed") return "destructive";
+  if (status === "partial_success" || status === "skipped_locked") return "secondary";
+  return "outline";
 }
 
 interface SyncJobRow {
@@ -86,11 +116,23 @@ export default async function IntegrationsPage() {
 
   const { data: integrations } = await supabase
     .from("integrations")
-    .select("id, sales_channel_id, platform, last_synced_at, last_cursor")
+    .select("id, sales_channel_id, platform, last_synced_at, last_cursor, last_sync_started_at, last_order_synced_at")
     .in("sales_channel_id", channelIds.length ? channelIds : fallback)
     .returns<IntegrationRow[]>();
 
   const integrationIds = (integrations ?? []).map((i) => i.id);
+
+  const { data: syncRuns } = await supabase
+    .from("sync_runs")
+    .select("id, trigger_type, status, started_at, finished_at, stores_total, stores_success, stores_failed, orders_received")
+    .order("started_at", { ascending: false })
+    .limit(5)
+    .returns<SyncRunRow[]>();
+
+  const lastRun = syncRuns?.[0] ?? null;
+  const nextEstimatedRun = lastRun?.finished_at
+    ? new Date(new Date(lastRun.finished_at).getTime() + 5 * 60_000).toISOString()
+    : null;
 
   const { data: syncJobs } = await supabase
     .from("sync_jobs")
@@ -155,6 +197,7 @@ export default async function IntegrationsPage() {
             const channel = (channels ?? []).find((c) => c.id === integration.sales_channel_id);
             const store = channel ? storeById.get(channel.store_id) : undefined;
             const brand = store ? brandById.get(store.brand_id) : undefined;
+            const freshness = classifySyncFreshness(integration.last_synced_at);
             return (
               <div key={integration.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-3">
                 <div>
@@ -163,14 +206,51 @@ export default async function IntegrationsPage() {
                   </p>
                   <p className="text-xs text-muted-foreground">
                     {integration.last_synced_at
-                      ? `Última sincronização: ${formatDateTimeBR(integration.last_synced_at)}`
+                      ? `Última sincronização com sucesso: ${formatDateTimeBR(integration.last_synced_at)}`
                       : "Nunca sincronizado"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Última tentativa: {integration.last_sync_started_at ? formatDateTimeBR(integration.last_sync_started_at) : "—"}
+                  </p>
+                  <p className={`text-xs font-medium ${freshness === "atualizado" ? "text-muted-foreground" : "text-destructive"}`}>
+                    {SYNC_FRESHNESS_LABELS[freshness]}
                   </p>
                 </div>
                 <SyncButton integrationId={integration.id} />
               </div>
             );
           })}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Sincronização automática</CardTitle>
+          <CardDescription>Ciclo agendado a cada 5 minutos via Supabase Cron (job dom-food-sync-every-5-minutes), com reconciliação noturna dos últimos 7 dias.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {lastRun ? (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-3">
+              <div className="space-y-0.5">
+                <p className="text-sm">
+                  Última execução: <span className="font-medium">{formatDateTimeBR(lastRun.started_at)}</span> ({lastRun.trigger_type})
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {lastRun.stores_success ?? 0}/{lastRun.stores_total ?? 0} loja(s) com sucesso
+                  {(lastRun.stores_failed ?? 0) > 0 ? `, ${lastRun.stores_failed} com falha` : ""} · {lastRun.orders_received ?? 0} pedido(s) recebido(s)
+                </p>
+                {nextEstimatedRun && (
+                  <p className="text-xs text-muted-foreground">Próxima execução estimada: {formatDateTimeBR(nextEstimatedRun)}</p>
+                )}
+              </div>
+              <Badge variant={runStatusVariant(lastRun.status)}>{RUN_STATUS_LABELS[lastRun.status] ?? lastRun.status}</Badge>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Nenhuma execução automática registrada ainda — confirme se as migrations 0015/0016 foram aplicadas e se o cron do
+              Supabase está agendado.
+            </p>
+          )}
         </CardContent>
       </Card>
 

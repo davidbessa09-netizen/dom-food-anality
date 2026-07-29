@@ -15,6 +15,8 @@ import {
 import { getViewerProductsSold, type ViewerData, type ViewerPeriodPreset } from "@/app/produtos-vendidos/actions";
 import { createClient } from "@/lib/supabase/client";
 import { matchesSearch } from "@/lib/text/normalize";
+import { classifySyncFreshness, SYNC_FRESHNESS_LABELS } from "@/lib/integrations/sync-status";
+import { SYNC_BROADCAST_CHANNEL, SYNC_BROADCAST_EVENT, type SyncCompletedPayload } from "@/lib/integrations/realtime-broadcast";
 import { AlertTriangle, ChevronDown, ChevronUp, Search, Store, WifiOff, X } from "lucide-react";
 
 const PERIODS: { value: ViewerPeriodPreset; label: string }[] = [
@@ -121,6 +123,19 @@ export function ProductsViewerTab() {
         }
       });
 
+    // Broadcast dedicado do fim de uma sincronização (ver
+    // broadcastSyncCompleted) — chega mesmo quando não há nenhuma linha
+    // nova (ex.: "cheguei a checar e não tinha pedido novo"), o que os
+    // eventos `postgres_changes` acima não cobrem.
+    const syncChannel = supabase
+      .channel(SYNC_BROADCAST_CHANNEL)
+      .on("broadcast", { event: SYNC_BROADCAST_EVENT }, (message) => {
+        const payload = message.payload as SyncCompletedPayload;
+        const relevant = selectedStores.length === 0 || payload.storeIds.some((id) => selectedStores.includes(id));
+        if (relevant) scheduleRefresh();
+      })
+      .subscribe();
+
     const fallbackTimer = setTimeout(() => {
       setStatus((current) => {
         if (current === "live") return current;
@@ -151,8 +166,10 @@ export function ProductsViewerTab() {
       window.removeEventListener("online", handleOnline);
       document.removeEventListener("visibilitychange", handleVisibility);
       supabase.removeChannel(channel);
+      supabase.removeChannel(syncChannel);
     };
-  }, [refresh]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refresh, selectedStoresKey]);
 
   const filteredSummaries = useMemo(() => {
     const summaries = data?.summaries ?? [];
@@ -180,6 +197,12 @@ export function ProductsViewerTab() {
         <p className="truncate text-sm font-medium">{storeLabel}</p>
         <ConnectionBadge status={status} lastFetchedAt={lastFetchedAt} />
       </div>
+
+      {data && (() => {
+        const freshness = classifySyncFreshness(data.lastDataReceivedAt);
+        if (freshness === "atualizado") return null;
+        return <p className="text-xs font-medium text-destructive">{SYNC_FRESHNESS_LABELS[freshness]}</p>;
+      })()}
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="inline-flex items-center gap-1 rounded-lg border bg-muted p-1">

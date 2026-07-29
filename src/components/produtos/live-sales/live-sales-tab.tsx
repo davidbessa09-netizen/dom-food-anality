@@ -13,6 +13,9 @@ import { LiveSalesTable } from "./live-sales-table";
 import { exportLiveSalesCsv } from "@/app/(dashboard)/produtos/live-sales-actions";
 import { getProductsSoldSummary, syncStoresNow, type ProductsSoldData } from "@/app/(dashboard)/produtos/products-sold-actions";
 import { matchesSearch } from "@/lib/text/normalize";
+import { classifySyncFreshness, SYNC_FRESHNESS_LABELS } from "@/lib/integrations/sync-status";
+import { SYNC_BROADCAST_CHANNEL, SYNC_BROADCAST_EVENT, type SyncCompletedPayload } from "@/lib/integrations/realtime-broadcast";
+import { createClient } from "@/lib/supabase/client";
 import { RefreshCw, Download, AlertTriangle, Search, X } from "lucide-react";
 
 const QUICK_PERIODS: { value: string; label: string }[] = [
@@ -91,6 +94,26 @@ export function LiveSalesTab() {
     const timer = setTimeout(refresh, 0);
     return () => clearTimeout(timer);
   }, [refresh]);
+
+  // Atualização em tempo real quando a sincronização automática (a cada
+  // 5min) termina — sem polling: só refaz a consulta com os MESMOS filtros
+  // de período/loja já aplicados quando o evento chega e é relevante pro
+  // escopo de lojas atual (ver broadcastSyncCompleted).
+  useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase
+      .channel(SYNC_BROADCAST_CHANNEL)
+      .on("broadcast", { event: SYNC_BROADCAST_EVENT }, (message) => {
+        const payload = message.payload as SyncCompletedPayload;
+        const relevant = storeIds.length === 0 || payload.storeIds.some((id) => storeIds.includes(id));
+        if (relevant) refresh();
+      })
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storesRaw, refresh]);
 
   function commitParams(patch: Record<string, string | null>) {
     const params = new URLSearchParams(searchParams);
@@ -185,6 +208,20 @@ export function LiveSalesTab() {
             Última sincronização:
             <br />
             {formatSyncedAt(data?.lastSyncedAt ?? null)}
+            {data?.lastSyncedAt !== undefined && (
+              <>
+                <br />
+                <span
+                  className={
+                    classifySyncFreshness(data?.lastSyncedAt ?? null) === "atualizado"
+                      ? "text-muted-foreground"
+                      : "font-medium text-destructive"
+                  }
+                >
+                  {SYNC_FRESHNESS_LABELS[classifySyncFreshness(data?.lastSyncedAt ?? null)]}
+                </span>
+              </>
+            )}
           </div>
           <Button
             size="sm"
