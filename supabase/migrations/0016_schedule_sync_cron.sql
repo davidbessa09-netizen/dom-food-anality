@@ -8,8 +8,8 @@
 --    valor: o MESMO valor da variável de ambiente CRON_SECRET já configurada
 --           no Vercel (ver .env.local) — a Edge Function usa esse valor pra
 --           se autenticar na rota /api/cron/sync do próprio app.
--- 3. Confirmar a URL pública do projeto Supabase (substitua
---    SEU-PROJETO abaixo pela referência real, ex.: abcdefghijk).
+-- 3. URL pública do projeto Supabase já preenchida abaixo com a
+--    referência real: bwgyfpjfnxtajysjwflq.
 --
 -- Nenhum segredo fica gravado neste arquivo — só a REFERÊNCIA ao nome do
 -- segredo no Vault (vault.decrypted_secrets), que só é resolvida em tempo
@@ -20,7 +20,7 @@ select cron.schedule(
   '*/5 * * * *',
   $$
   select net.http_post(
-    url := 'https://SEU-PROJETO.supabase.co/functions/v1/sync-orders-items',
+    url := 'https://bwgyfpjfnxtajysjwflq.supabase.co/functions/v1/sync-orders-items',
     headers := jsonb_build_object(
       'Content-Type', 'application/json',
       'Authorization', 'Bearer ' || (select decrypted_secret from vault.decrypted_secrets where name = 'sync_internal_token')
@@ -38,7 +38,7 @@ select cron.schedule(
   '15 6 * * *',
   $$
   select net.http_post(
-    url := 'https://SEU-PROJETO.supabase.co/functions/v1/sync-orders-items',
+    url := 'https://bwgyfpjfnxtajysjwflq.supabase.co/functions/v1/sync-orders-items',
     headers := jsonb_build_object(
       'Content-Type', 'application/json',
       'Authorization', 'Bearer ' || (select decrypted_secret from vault.decrypted_secrets where name = 'sync_internal_token')
