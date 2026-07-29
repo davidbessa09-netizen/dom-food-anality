@@ -1,7 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/auth/session";
+import { BRAND, copyrightLine } from "@/lib/brand";
 
 export default async function SettingsPage() {
   const user = await getCurrentUser();
@@ -10,16 +10,14 @@ export default async function SettingsPage() {
   const orgIds = [...new Set((user?.memberships ?? []).map((m) => m.organization_id))];
   const { data: orgs } = await supabase
     .from("organizations")
-    .select("id, name, timezone, is_demo")
+    .select("id, name, timezone")
     .in("id", orgIds.length ? orgIds : ["00000000-0000-0000-0000-000000000000"]);
 
   return (
     <div className="space-y-4">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Configurações</h1>
-        <p className="text-sm text-muted-foreground">
-          Organização, fuso horário e status de dados de demonstração.
-        </p>
+        <p className="text-sm text-muted-foreground">Organização e fuso horário.</p>
       </div>
 
       <Card>
@@ -34,7 +32,6 @@ export default async function SettingsPage() {
                 <p className="font-medium">{org.name}</p>
                 <p className="text-xs text-muted-foreground">{org.timezone}</p>
               </div>
-              {org.is_demo && <Badge className="bg-amber-400 text-amber-950">DEMONSTRAÇÃO</Badge>}
             </div>
           ))}
           {(orgs ?? []).length === 0 && (
@@ -45,12 +42,15 @@ export default async function SettingsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Limpeza de dados de demonstração</CardTitle>
-          <CardDescription>
-            Ação administrativa (implementada na Fase 6) que remove em cascata todas as
-            organizações marcadas como demonstração antes de operar com dados reais.
-          </CardDescription>
+          <CardTitle className="text-base">Sobre</CardTitle>
         </CardHeader>
+        <CardContent className="space-y-1 text-sm">
+          <p className="font-medium">{BRAND.name}</p>
+          <p className="text-muted-foreground">{BRAND.description}</p>
+          <p className="text-muted-foreground">Desenvolvido por {BRAND.developer}</p>
+          <p className="text-muted-foreground">Versão: {BRAND.version}</p>
+          <p className="pt-2 text-xs text-muted-foreground">{copyrightLine()}</p>
+        </CardContent>
       </Card>
     </div>
   );

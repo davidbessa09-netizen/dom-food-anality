@@ -1,12 +1,12 @@
 -- =====================================================================
--- Dados de DEMONSTRAÇÃO — nunca misturar com dados reais.
--- Toda organização aqui tem is_demo = true; a UI mostra a faixa
--- "DEMONSTRAÇÃO" automaticamente. Para limpar: ver DEPLOYMENT.md
+-- Dados de desenvolvimento local — nunca misturar com dados reais.
+-- Toda organização aqui tem is_demo = true (usado só para identificação
+-- interna, não exibido na UI). Para limpar: ver DEPLOYMENT.md
 -- (DELETE FROM organizations WHERE is_demo = true; -- cascade cuida do resto)
 -- =====================================================================
 
 insert into organizations (id, name, is_demo, timezone)
-values ('00000000-0000-0000-0000-000000000001', 'DOM Food Park (demonstração)', true, 'America/Sao_Paulo');
+values ('00000000-0000-0000-0000-000000000001', 'DOM Food Park', true, 'America/Sao_Paulo');
 
 insert into brands (id, organization_id, name, slug, color_hex) values
   ('00000000-0000-0000-0000-000000000011', '00000000-0000-0000-0000-000000000001', 'Gulas', 'gulas', '#e11d48'),

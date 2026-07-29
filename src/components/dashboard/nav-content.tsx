@@ -40,7 +40,7 @@ export function NavContent({
               <button
                 type="button"
                 onClick={() => toggleGroup(group.label)}
-                className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-xs font-medium tracking-wide text-muted-foreground uppercase hover:text-foreground"
+                className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-xs font-medium tracking-wide text-sidebar-foreground/50 uppercase hover:text-sidebar-foreground"
                 aria-expanded={isOpen}
               >
                 {group.label}

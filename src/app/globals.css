@@ -69,32 +69,53 @@
   --radius-control: 12px;
   --radius-card: 16px;
 
+  /* Paleta oficial DOM — derivada diretamente da logomarca (preto/grafite,
+     roxo, dourado, prata). Substitui a paleta anterior (dourado como cor
+     primária, sidebar branca) — ver commit desta mudança. */
+  --dom-black: #070708;
+  --dom-graphite: #151319;
+  --dom-purple: #6F1AD1;
+  --dom-purple-hover: #5A13A8;
+  --dom-purple-light: #F1E7FF;
+  --dom-gold: #D99A1B;
+  --dom-gold-hover: #B97810;
+  --dom-gold-light: #FFF4D6;
+  --dom-silver: #C9C4BC;
+  --dom-background: #F6F4F7;
+  --dom-surface: #FFFFFF;
+  --dom-border: #DED9E1;
+  --dom-text: #18161B;
+  --dom-text-muted: #716B75;
+
   /* Tokens semânticos DOM Food Analytics — tema claro (único tema completo
      e validado; dark mode não foi implementado para evitar entregar uma
      versão parcial/inconsistente, ver AGENTS.md / commit desta mudança). */
-  --background: oklch(1 0 0);
-  --foreground: #17171C;
-  --surface: #FAFAFB;
-  --card: #FFFFFF;
-  --card-foreground: #17171C;
-  --popover: #FFFFFF;
-  --popover-foreground: #17171C;
+  --background: var(--dom-background);
+  --foreground: var(--dom-text);
+  --surface: var(--dom-surface);
+  --card: var(--dom-surface);
+  --card-foreground: var(--dom-text);
+  --popover: var(--dom-surface);
+  --popover-foreground: var(--dom-text);
 
-  --primary: #F4C542;
-  --primary-foreground: #1A1A22;
-  --primary-hover: #E0B02E;
-  --primary-soft: #FDF3D8;
+  /* Roxo nas ações principais e seleções (pedido explícito do brief de
+     marca) — dourado passa a ser reservado pra sincronização/destaques,
+     nunca mais a cor de botão padrão. */
+  --primary: var(--dom-purple);
+  --primary-foreground: #FFFFFF;
+  --primary-hover: var(--dom-purple-hover);
+  --primary-soft: var(--dom-purple-light);
 
-  --secondary: #F2F1F5;
-  --secondary-foreground: #17171C;
-  --muted: #F2F1F5;
-  --muted-foreground: #6B6A76;
-  --accent: #F2F1F5;
-  --accent-foreground: #17171C;
+  --secondary: #F1EFF3;
+  --secondary-foreground: var(--dom-text);
+  --muted: #F1EFF3;
+  --muted-foreground: var(--dom-text-muted);
+  --accent: var(--dom-purple-light);
+  --accent-foreground: var(--dom-purple);
 
   --success: #16A36A;
   --success-foreground: #FFFFFF;
-  --warning: #F59E0B;
+  --warning: var(--dom-gold);
   --warning-foreground: #1A1A22;
   --danger: #DC3C4D;
   --danger-foreground: #FFFFFF;
@@ -102,35 +123,36 @@
      existentes que ainda referenciam esse nome (ver mapeamento acima). */
   --destructive: var(--danger);
 
-  --border: #E7E4EC;
-  --input: #E7E4EC;
-  --ring: #F4C542;
+  --border: var(--dom-border);
+  --input: var(--dom-border);
+  --ring: var(--dom-purple);
 
-  --chart-1: #F4C542;
-  --chart-2: #16A36A;
-  --chart-3: #3B82F6;
+  /* Sem azul — paleta de gráficos redesenhada em torno de roxo/dourado/prata
+     (identidade anterior usava azul, removido por pedido explícito). */
+  --chart-1: var(--dom-purple);
+  --chart-2: var(--dom-gold);
+  --chart-3: #16A36A;
   --chart-4: #DC3C4D;
-  --chart-5: #8B5CF6;
-  --chart-6: #F59E0B;
-  --chart-7: #06B6D4;
+  --chart-5: #9B59F6;
+  --chart-6: var(--dom-silver);
+  --chart-7: #8E7CC3;
   --chart-8: #6B7280;
 
-  /* Estado ativo de navegação (sidebar) — roxo claro/profundo, distinto do
-     dourado de destaque usado em CTAs, pra diferenciar "onde eu estou" de
-     "ação primária". Chart-5 já usa o mesmo roxo como uma das 8 cores de
-     série de dados, mantendo a paleta consistente. */
-  --nav-active-bg: #EDE9FE;
-  --nav-active-foreground: #5B21B6;
-  --nav-active-indicator: #7C3AED;
+  /* Estado ativo de navegação (sidebar) — dourado translúcido sobre o
+     fundo preto do menu, com barra indicadora dourada (o roxo já é a cor
+     de seleção/ação primária no resto da interface). */
+  --nav-active-bg: rgba(217, 154, 27, 0.16);
+  --nav-active-foreground: #FFFFFF;
+  --nav-active-indicator: var(--dom-gold);
 
-  --sidebar: #FFFFFF;
-  --sidebar-foreground: #17171C;
-  --sidebar-primary: #F4C542;
-  --sidebar-primary-foreground: #1A1A22;
-  --sidebar-accent: #F2F1F5;
-  --sidebar-accent-foreground: #17171C;
-  --sidebar-border: #E7E4EC;
-  --sidebar-ring: #F4C542;
+  --sidebar: var(--dom-black);
+  --sidebar-foreground: #EDEAF0;
+  --sidebar-primary: var(--dom-purple);
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: var(--dom-graphite);
+  --sidebar-accent-foreground: #FFFFFF;
+  --sidebar-border: var(--dom-graphite);
+  --sidebar-ring: var(--dom-purple);
 }
 
 @layer base {

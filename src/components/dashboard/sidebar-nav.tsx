@@ -15,6 +15,7 @@ import { NavContent } from "./nav-content";
 import { getVisibleNavGroups } from "./nav-items";
 import { logout } from "@/app/login/actions";
 import { ChevronsLeft, ChevronsRight, LogOut } from "lucide-react";
+import { BRAND } from "@/lib/brand";
 
 const ROLE_LABELS: Record<string, string> = {
   admin_geral: "Administrador geral",
@@ -54,12 +55,12 @@ export function SidebarNav({
         {collapsed ? (
           <span className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-md bg-black">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/dom-logo-symbol.png" alt="DOM — Domínio Digital" className="size-full object-contain p-1" />
+            <img src={BRAND.logoSymbolPath} alt={BRAND.logoAlt} className="size-full object-contain p-1" />
           </span>
         ) : (
           <span className="flex h-10 min-w-0 flex-1 items-center overflow-hidden rounded-md bg-black px-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/dom-logo-full.png" alt="DOM — Domínio Digital" className="h-full w-full object-contain" />
+            <img src={BRAND.logoFullPath} alt={BRAND.logoAlt} className="h-full w-full object-contain" />
           </span>
         )}
         <Button
@@ -93,7 +94,7 @@ export function SidebarNav({
             {!collapsed && (
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-xs font-medium">{organizationName ?? "—"}</span>
-                <span className="block truncate text-xs text-muted-foreground">{email}</span>
+                <span className="block truncate text-xs text-sidebar-foreground/60">{email}</span>
               </span>
             )}
           </DropdownMenuTrigger>
@@ -109,6 +110,12 @@ export function SidebarNav({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+
+        {!collapsed && (
+          <p className="mt-2 px-2 text-[11px] leading-tight text-[color:var(--dom-silver)]">
+            Desenvolvido por <span className="text-[color:var(--dom-gold)]">{BRAND.developer}</span>
+          </p>
+        )}
       </div>
     </aside>
   );

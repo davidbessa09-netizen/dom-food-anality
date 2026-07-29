@@ -17,6 +17,7 @@ import { CommandPalette } from "./command-palette";
 import { findActiveNavItem, getVisibleNavGroups } from "./nav-items";
 import { logout } from "@/app/login/actions";
 import { RefreshCw, Bell, HelpCircle, LogOut, ChevronRight } from "lucide-react";
+import { BRAND } from "@/lib/brand";
 
 const ROLE_LABELS: Record<string, string> = {
   admin_geral: "Administrador geral",
@@ -78,7 +79,7 @@ export function Topbar({
       <div className="flex min-w-0 items-center gap-2">
         <MobileNav groups={groups} />
         <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1 text-sm">
-          <span className="text-muted-foreground">DOM Food Analytics</span>
+          <span className="text-muted-foreground">{BRAND.name}</span>
           {activeItem && (
             <>
               <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />

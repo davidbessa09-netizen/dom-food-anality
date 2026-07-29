@@ -1,6 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import Link from "next/link";
 import { buttonVariants } from "@/components/ui/button";
+import { BRAND } from "@/lib/brand";
 
 const STEPS = [
   "Criar o projeto Supabase e rodar supabase/schema.sql",
@@ -15,7 +16,7 @@ export default function OnboardingPage() {
     <div className="flex min-h-screen items-center justify-center bg-muted/40 p-4">
       <Card className="w-full max-w-lg">
         <CardHeader>
-          <CardTitle>Bem-vindo ao DOM Food Analytics</CardTitle>
+          <CardTitle>Bem-vindo ao {BRAND.name}</CardTitle>
           <CardDescription>
             Siga os passos abaixo para colocar o sistema no ar (detalhes em
             DEPLOYMENT.md).

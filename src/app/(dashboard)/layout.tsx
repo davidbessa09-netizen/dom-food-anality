@@ -4,7 +4,6 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { SidebarNav } from "@/components/dashboard/sidebar-nav";
 import { Topbar } from "@/components/dashboard/topbar";
-import { DemoBanner } from "@/components/dashboard/demo-banner";
 import { buildSyncAlerts, type IntegrationHealthInput, type RecentSyncJobInput } from "@/lib/metrics/alerts";
 
 interface IntegrationRow {
@@ -31,7 +30,6 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   const isAdmin = user.memberships.some((m) => m.role === "admin_geral");
 
-  let isDemo = false;
   let organizations: { id: string; name: string }[] = [];
   let lastSyncedAt: string | null = null;
   let alertsCount = 0;
@@ -40,8 +38,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     const supabase = await createClient();
     const orgIds = [...new Set(user.memberships.map((m) => m.organization_id))];
 
-    const { data: orgs } = await supabase.from("organizations").select("id, name, is_demo").in("id", orgIds);
-    isDemo = (orgs ?? []).some((o) => o.is_demo);
+    const { data: orgs } = await supabase.from("organizations").select("id, name").in("id", orgIds);
     organizations = (orgs ?? []).map((o) => ({ id: o.id, name: o.name }));
 
     const { data: brands } = await supabase.from("brands").select("id").in("organization_id", orgIds);
@@ -107,7 +104,6 @@ export default async function DashboardLayout({ children }: { children: React.Re
         isAdmin={isAdmin}
       />
       <div className="flex flex-1 flex-col overflow-hidden">
-        {isDemo && <DemoBanner />}
         <Topbar
           isAdmin={isAdmin}
           email={user.email ?? "—"}

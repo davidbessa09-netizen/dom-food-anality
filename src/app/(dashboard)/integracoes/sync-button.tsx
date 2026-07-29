@@ -41,7 +41,12 @@ export function SyncButton({ integrationId }: { integrationId: string }) {
 
   return (
     <div className="flex gap-2">
-      <Button size="sm" onClick={handleSync} disabled={syncing}>
+      <Button
+        size="sm"
+        onClick={handleSync}
+        disabled={syncing}
+        className="bg-[color:var(--dom-gold)] text-white hover:bg-[color:var(--dom-gold-hover)]"
+      >
         {syncing ? "Sincronizando..." : "Sincronizar agora"}
       </Button>
       <Button size="sm" variant="outline" onClick={handleSyncMenu} disabled={syncingMenu}>

@@ -186,7 +186,12 @@ export function LiveSalesTab() {
             <br />
             {formatSyncedAt(data?.lastSyncedAt ?? null)}
           </div>
-          <Button size="sm" onClick={handleSync} disabled={syncing}>
+          <Button
+            size="sm"
+            onClick={handleSync}
+            disabled={syncing}
+            className="bg-[color:var(--dom-gold)] text-white hover:bg-[color:var(--dom-gold-hover)]"
+          >
             <RefreshCw className={syncing ? "size-3.5 animate-spin" : "size-3.5"} />
             {syncing ? "Sincronizando..." : "Sincronizar"}
           </Button>
@@ -298,7 +303,12 @@ export function LiveSalesTab() {
           <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
             <p className="text-sm font-medium">Nenhum produto vendido no período selecionado.</p>
             <p className="text-sm text-muted-foreground">Tente escolher outra data ou sincronizar os dados.</p>
-            <Button size="sm" onClick={handleSync} disabled={syncing}>
+            <Button
+            size="sm"
+            onClick={handleSync}
+            disabled={syncing}
+            className="bg-[color:var(--dom-gold)] text-white hover:bg-[color:var(--dom-gold-hover)]"
+          >
               <RefreshCw className={syncing ? "size-3.5 animate-spin" : "size-3.5"} />
               {syncing ? "Sincronizando..." : "Sincronizar agora"}
             </Button>

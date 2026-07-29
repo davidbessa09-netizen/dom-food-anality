@@ -3,6 +3,7 @@ import { Inter, Space_Grotesk, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
+import { BRAND } from "@/lib/brand";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -19,9 +20,27 @@ const jetbrainsMono = JetBrains_Mono({
   subsets: ["latin"],
 });
 
+const siteUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000";
+
 export const metadata: Metadata = {
-  title: "DOM Food Analytics",
-  description: "BI multi-loja para operações de alimentação e delivery",
+  metadataBase: new URL(siteUrl),
+  title: {
+    default: BRAND.name,
+    template: `%s · ${BRAND.name}`,
+  },
+  description: BRAND.description,
+  applicationName: BRAND.name,
+  appleWebApp: {
+    capable: true,
+    title: BRAND.name,
+    statusBarStyle: "black-translucent",
+  },
+  openGraph: {
+    title: BRAND.name,
+    description: BRAND.description,
+    siteName: BRAND.name,
+    images: [{ url: BRAND.logoFullPath }],
+  },
 };
 
 export default function RootLayout({
