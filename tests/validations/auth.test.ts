@@ -3,17 +3,22 @@ import { loginSchema, recoverPasswordSchema } from "@/lib/validations/auth";
 
 describe("loginSchema", () => {
   it("aceita e-mail e senha válidos", () => {
-    const result = loginSchema.safeParse({ email: "a@b.com", password: "123456" });
+    const result = loginSchema.safeParse({ identifier: "a@b.com", password: "123456" });
     expect(result.success).toBe(true);
   });
 
-  it("rejeita e-mail inválido", () => {
-    const result = loginSchema.safeParse({ email: "not-an-email", password: "123456" });
+  it("aceita nome de usuário (sem @) e senha válidos", () => {
+    const result = loginSchema.safeParse({ identifier: "gerentegulas", password: "123456" });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejeita identificador curto demais", () => {
+    const result = loginSchema.safeParse({ identifier: "ab", password: "123456" });
     expect(result.success).toBe(false);
   });
 
   it("rejeita senha curta", () => {
-    const result = loginSchema.safeParse({ email: "a@b.com", password: "123" });
+    const result = loginSchema.safeParse({ identifier: "a@b.com", password: "123" });
     expect(result.success).toBe(false);
   });
 });

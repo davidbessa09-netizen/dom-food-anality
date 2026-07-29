@@ -7,7 +7,8 @@ export type UserRole =
   | "gestor_marca"
   | "gestor_loja"
   | "analista"
-  | "somente_leitura";
+  | "somente_leitura"
+  | "products_viewer";
 
 export type PlatformType = "anota_ai" | "ifood" | "csv_import" | "event_tracking";
 
@@ -61,6 +62,24 @@ export interface UserOrganization {
   brand_id: string | null;
   store_id: string | null;
   created_at: string;
+}
+
+/** Dados de identificação/gestão de acesso restrito — login por nome de
+ * usuário, sem e-mail exibido na interface (ver migration 0014). */
+export interface UserProfile {
+  user_id: string;
+  username: string;
+  display_name: string;
+  status: "ativo" | "inativo";
+  must_change_password: boolean;
+  expires_at: string | null;
+  note: string | null;
+  failed_login_count: number;
+  locked_until: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  last_login_at: string | null;
 }
 
 export interface Category {

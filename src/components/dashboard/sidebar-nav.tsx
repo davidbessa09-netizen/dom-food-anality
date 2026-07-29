@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -13,6 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { NavContent } from "./nav-content";
 import { getVisibleNavGroups } from "./nav-items";
+import { LogoutButton } from "./logout-button";
 import { logout } from "@/app/login/actions";
 import { ChevronsLeft, ChevronsRight, LogOut } from "lucide-react";
 import { BRAND } from "@/lib/brand";
@@ -99,10 +101,12 @@ export function SidebarNav({
             )}
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" side="top" className="w-56">
-            <DropdownMenuLabel>
-              <span className="block truncate font-medium">{email}</span>
-              {role && <span className="block text-xs font-normal text-muted-foreground">{ROLE_LABELS[role] ?? role}</span>}
-            </DropdownMenuLabel>
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>
+                <span className="block truncate font-medium">{email}</span>
+                {role && <span className="block text-xs font-normal text-muted-foreground">{ROLE_LABELS[role] ?? role}</span>}
+              </DropdownMenuLabel>
+            </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive" onClick={() => logout()}>
               <LogOut className="size-4" />
@@ -111,11 +115,16 @@ export function SidebarNav({
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {!collapsed && (
-          <p className="mt-2 px-2 text-[11px] leading-tight text-[color:var(--dom-silver)]">
-            Desenvolvido por <span className="text-[color:var(--dom-gold)]">{BRAND.developer}</span>
-          </p>
-        )}
+        {/* Botão Sair independente — sempre acessível mesmo se o menu do
+         * perfil acima tiver algum problema (ver ErrorBoundary do layout). */}
+        <div className={cn("mt-1 flex items-center", collapsed ? "justify-center" : "justify-between gap-2 px-2")}>
+          {!collapsed && (
+            <p className="text-[11px] leading-tight text-[color:var(--dom-silver)]">
+              Desenvolvido por <span className="text-[color:var(--dom-gold)]">{BRAND.developer}</span>
+            </p>
+          )}
+          <LogoutButton variant={collapsed ? "icon" : "text"} />
+        </div>
       </div>
     </aside>
   );

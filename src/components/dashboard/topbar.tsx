@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -14,6 +15,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Badge } from "@/components/ui/badge";
 import { MobileNav } from "./mobile-nav";
 import { CommandPalette } from "./command-palette";
+import { LogoutButton } from "./logout-button";
 import { findActiveNavItem, getVisibleNavGroups } from "./nav-items";
 import { logout } from "@/app/login/actions";
 import { RefreshCw, Bell, HelpCircle, LogOut, ChevronRight } from "lucide-react";
@@ -168,10 +170,12 @@ export function Topbar({
             <span className="hidden max-w-24 truncate sm:inline">{firstName}</span>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel>
-              <span className="block truncate font-medium">{email}</span>
-              {role && <span className="block text-xs font-normal text-muted-foreground">{ROLE_LABELS[role] ?? role}</span>}
-            </DropdownMenuLabel>
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>
+                <span className="block truncate font-medium">{email}</span>
+                {role && <span className="block text-xs font-normal text-muted-foreground">{ROLE_LABELS[role] ?? role}</span>}
+              </DropdownMenuLabel>
+            </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive" onClick={() => logout()}>
               <LogOut className="size-4" />
@@ -179,6 +183,10 @@ export function Topbar({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+
+        {/* Independente do menu acima — sempre acessível mesmo se o menu
+         * do perfil tiver algum problema (ver ErrorBoundary do layout). */}
+        <LogoutButton variant="icon" />
       </div>
     </header>
   );

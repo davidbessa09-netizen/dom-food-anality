@@ -1,7 +1,10 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { isViewerOnlyRoles } from "@/lib/auth/username";
+import type { UserRole } from "@/types/database";
 
 const PUBLIC_PATHS = ["/login", "/recuperar-senha", "/onboarding"];
+const VIEWER_ALLOWED_PATH = "/produtos-vendidos";
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
@@ -41,6 +44,39 @@ export async function updateSession(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);
+  }
+
+  // Bloqueio real de rota pro perfil "Visualizador de produtos" — não
+  // basta esconder o menu, a barreira de verdade é aqui (roda em TODO
+  // request, inclusive digitando a URL direto) e no RLS do banco. Um
+  // usuário com QUALQUER outro papel além de products_viewer não é
+  // restrito por esta regra (ex.: admin também vinculado como viewer em
+  // outra loja continua vendo tudo que seu outro papel permite).
+  if (user && !isPublic && !isApiRoute) {
+    const { data: memberships } = await supabase.from("user_organizations").select("role").eq("user_id", user.id);
+    const roles = (memberships ?? []).map((m) => m.role as UserRole);
+    const viewerOnly = isViewerOnlyRoles(roles);
+
+    if (viewerOnly) {
+      // Revogação imediata: se o administrador desativou o acesso ou ele
+      // expirou, a sessão já autenticada (JWT ainda válido) é encerrada no
+      // próximo request, sem esperar o token expirar sozinho.
+      const { data: profile } = await supabase.from("user_profiles").select("status, expires_at").eq("user_id", user.id).maybeSingle();
+      const expired = Boolean(profile?.expires_at && new Date(profile.expires_at).getTime() < Date.now());
+      if (profile?.status === "inativo" || expired) {
+        await supabase.auth.signOut();
+        const url = request.nextUrl.clone();
+        url.pathname = "/login";
+        return NextResponse.redirect(url);
+      }
+    }
+
+    if (viewerOnly && !path.startsWith(VIEWER_ALLOWED_PATH)) {
+      const url = request.nextUrl.clone();
+      url.pathname = VIEWER_ALLOWED_PATH;
+      url.searchParams.set("blocked", "1");
+      return NextResponse.redirect(url);
+    }
   }
 
   return supabaseResponse;

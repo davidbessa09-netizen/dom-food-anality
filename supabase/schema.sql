@@ -13,7 +13,7 @@ create extension if not exists "pg_trgm"; -- para similaridade de nomes de produ
 -- ---------------------------------------------------------------------
 -- ENUMS
 -- ---------------------------------------------------------------------
-create type user_role as enum ('admin_geral','gestor_marca','gestor_loja','analista','somente_leitura');
+create type user_role as enum ('admin_geral','gestor_marca','gestor_loja','analista','somente_leitura','products_viewer');
 create type platform_type as enum ('anota_ai','ifood','csv_import','event_tracking');
 create type sync_status as enum ('pending','running','success','partial_success','failed');
 create type order_status as enum ('criado','confirmado','em_preparo','saiu_para_entrega','concluido','cancelado');
@@ -540,6 +540,10 @@ create index trgm_neighborhood_alias on neighborhood_aliases using gin (raw_valu
 -- =====================================================================
 
 -- Função auxiliar: o usuário logado tem acesso a esta loja?
+-- Nota: estas 3 funções excluem explicitamente o papel products_viewer
+-- (Visualizador de produtos) — esse papel fica bloqueado de tudo que
+-- depende delas (praticamente todas as tabelas exceto as 6 abaixo), e só
+-- recebe acesso via user_has_products_viewer_*_access (ver adiante).
 create or replace function public.user_has_store_access(target_store_id uuid)
 returns boolean
 language sql
@@ -552,6 +556,7 @@ as $$
     join stores s on s.id = target_store_id
     join brands b on b.id = s.brand_id
     where uo.user_id = auth.uid()
+      and uo.role <> 'products_viewer'
       and uo.organization_id = b.organization_id
       and (uo.brand_id is null or uo.brand_id = b.id)
       and (uo.store_id is null or uo.store_id = s.id)
@@ -569,6 +574,7 @@ as $$
     from user_organizations uo
     join brands b on b.id = target_brand_id
     where uo.user_id = auth.uid()
+      and uo.role <> 'products_viewer'
       and uo.organization_id = b.organization_id
       and (uo.brand_id is null or uo.brand_id = b.id)
   );
@@ -582,7 +588,47 @@ stable
 as $$
   select exists (
     select 1 from user_organizations uo
-    where uo.user_id = auth.uid() and uo.organization_id = target_org_id
+    where uo.user_id = auth.uid()
+      and uo.organization_id = target_org_id
+      and uo.role <> 'products_viewer'
+  );
+$$;
+
+-- Acesso EXPLÍCITO e restrito do Visualizador de produtos — usado só nas 6
+-- policies de select que "Produtos vendidos" precisa (ver mais abaixo).
+create or replace function public.user_has_products_viewer_store_access(target_store_id uuid)
+returns boolean
+language sql
+security definer
+stable
+as $$
+  select exists (
+    select 1
+    from user_organizations uo
+    join stores s on s.id = target_store_id
+    join brands b on b.id = s.brand_id
+    where uo.user_id = auth.uid()
+      and uo.role = 'products_viewer'
+      and uo.organization_id = b.organization_id
+      and (uo.brand_id is null or uo.brand_id = b.id)
+      and (uo.store_id is null or uo.store_id = s.id)
+  );
+$$;
+
+create or replace function public.user_has_products_viewer_brand_access(target_brand_id uuid)
+returns boolean
+language sql
+security definer
+stable
+as $$
+  select exists (
+    select 1
+    from user_organizations uo
+    join brands b on b.id = target_brand_id
+    where uo.user_id = auth.uid()
+      and uo.role = 'products_viewer'
+      and uo.organization_id = b.organization_id
+      and (uo.brand_id is null or uo.brand_id = b.id)
   );
 $$;
 
@@ -612,27 +658,30 @@ create policy brand_select on brands for select
   using (public.user_has_brand_access(id));
 
 create policy store_select on stores for select
-  using (public.user_has_store_access(id));
+  using (public.user_has_store_access(id) or public.user_has_products_viewer_store_access(id));
 
 create policy sales_channel_select on sales_channels for select
-  using (public.user_has_store_access(store_id));
+  using (public.user_has_store_access(store_id) or public.user_has_products_viewer_store_access(store_id));
 
 create policy user_org_select on user_organizations for select
   using (user_id = auth.uid() or public.user_has_org_access(organization_id));
 
 create policy orders_select on orders for select
-  using (public.user_has_store_access(store_id));
+  using (public.user_has_store_access(store_id) or public.user_has_products_viewer_store_access(store_id));
 
 create policy order_items_select on order_items for select
-  using (exists (select 1 from orders o where o.id = order_items.order_id and public.user_has_store_access(o.store_id)));
+  using (exists (
+    select 1 from orders o where o.id = order_items.order_id
+      and (public.user_has_store_access(o.store_id) or public.user_has_products_viewer_store_access(o.store_id))
+  ));
 
 create policy products_select on products for select
-  using (public.user_has_brand_access(brand_id));
+  using (public.user_has_brand_access(brand_id) or public.user_has_products_viewer_brand_access(brand_id));
 
 create policy product_variants_select on product_variants for select
   using (exists (
     select 1 from sales_channels sc where sc.id = product_variants.sales_channel_id
-    and public.user_has_store_access(sc.store_id)
+    and (public.user_has_store_access(sc.store_id) or public.user_has_products_viewer_store_access(sc.store_id))
   ));
 
 create policy categories_select on categories for select
@@ -1154,3 +1203,48 @@ create policy opportunity_events_write on opportunity_events for all
 -- Realtime pra "Produtos vendidos ao vivo" (ver migration 0012_realtime_orders.sql)
 alter publication supabase_realtime add table orders;
 alter publication supabase_realtime add table order_items;
+
+-- ---------------------------------------------------------------------
+-- Perfil do usuário (login por nome de usuário, ver migration 0014)
+-- ---------------------------------------------------------------------
+-- auth.users ainda exige um e-mail internamente (restrição do Supabase
+-- Auth) — usamos um e-mail sintético e privado (username@users.dom-food-
+-- analytics.internal), nunca exibido na UI. Esta tabela guarda os dados
+-- reais de identificação/gestão do acesso restrito.
+create table user_profiles (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  username text not null unique,
+  display_name text not null,
+  status text not null default 'ativo' check (status in ('ativo', 'inativo')),
+  must_change_password boolean not null default true,
+  expires_at timestamptz,
+  note text,
+  failed_login_count int not null default 0,
+  locked_until timestamptz,
+  created_by uuid references auth.users(id),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  last_login_at timestamptz
+);
+
+alter table user_profiles enable row level security;
+
+create policy user_profiles_select_self on user_profiles for select
+  using (user_id = auth.uid());
+
+create policy user_profiles_select_admin on user_profiles for select
+  using (
+    exists (
+      select 1 from user_organizations admin_uo
+      join user_organizations target_uo on target_uo.user_id = user_profiles.user_id
+      where admin_uo.user_id = auth.uid()
+        and admin_uo.role = 'admin_geral'
+        and admin_uo.organization_id = target_uo.organization_id
+    )
+  );
+
+-- Escrita só via Server Action com a service role (bypassa RLS) depois de
+-- verificar explicitamente que quem chama é admin_geral — sem policy de
+-- insert/update pro cliente comum.
+
+create index idx_user_profiles_username on user_profiles (username);
