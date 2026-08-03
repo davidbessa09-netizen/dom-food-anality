@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { syncAnotaAiIntegration } from "@/lib/integrations/anota-ai/sync";
+import { syncBarFacilIntegration } from "@/lib/integrations/bar-facil/sync";
 import { tryAcquireSyncLock, releaseSyncLock } from "@/lib/integrations/sync-lock";
 import { computeReconciliationSince } from "@/lib/integrations/sync-window";
 
@@ -99,6 +100,24 @@ async function runSync(request: NextRequest, triggerType: TriggerType) {
       }
     }
 
+    // Bar Fácil é uma integração única (não por loja) — roda depois do
+    // loop da Anota AI, no mesmo ciclo de 5min, e nunca derruba o restante
+    // do sync se falhar (mesmo padrão de isolamento de falha por origem).
+    let barFacilResult: Awaited<ReturnType<typeof syncBarFacilIntegration>> | null = null;
+    try {
+      const { data: barFacilIntegration } = await supabase.from("integrations").select("id").eq("platform", "bar_facil").eq("is_active", true).maybeSingle();
+      if (barFacilIntegration) {
+        barFacilResult = await syncBarFacilIntegration(supabase, triggerType);
+        ordersReceived += barFacilResult.ordersProcessed;
+        if (barFacilResult.ok) storesSuccess += barFacilResult.eventosProcessed;
+        else storesFailed += barFacilResult.errors.length || 1;
+      }
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Erro desconhecido";
+      barFacilResult = { ok: false, eventosProcessed: 0, ordersProcessed: 0, errors: [message] };
+      storesFailed++;
+    }
+
     const finalStatus = storesFailed === 0 ? "success" : storesSuccess === 0 ? "failed" : "partial_success";
 
     if (syncRun) {
@@ -108,7 +127,7 @@ async function runSync(request: NextRequest, triggerType: TriggerType) {
           status: finalStatus,
           finished_at: new Date().toISOString(),
           duration_ms: Date.now() - startedAt.getTime(),
-          stores_total: (integrations ?? []).length,
+          stores_total: (integrations ?? []).length + (barFacilResult ? barFacilResult.eventosProcessed : 0),
           stores_success: storesSuccess,
           stores_failed: storesFailed,
           orders_received: ordersReceived,
@@ -121,6 +140,7 @@ async function runSync(request: NextRequest, triggerType: TriggerType) {
       triggerType,
       integrationsProcessed: results.length,
       results,
+      barFacil: barFacilResult,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Erro desconhecido";

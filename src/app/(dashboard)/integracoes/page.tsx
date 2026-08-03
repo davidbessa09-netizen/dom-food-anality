@@ -8,6 +8,8 @@ import { SyncButton } from "./sync-button";
 import { SyncLogViewer } from "./sync-log-viewer";
 import { formatDateTimeBR } from "@/lib/dates/format";
 import { classifySyncFreshness, SYNC_FRESHNESS_LABELS } from "@/lib/integrations/sync-status";
+import { getBarFacilIntegration } from "./bar-facil-actions";
+import { BarFacilCard } from "./bar-facil-card";
 import type { Brand, Store } from "@/types/database";
 
 interface SalesChannelRow {
@@ -84,6 +86,7 @@ function statusVariant(status: string): "default" | "destructive" | "secondary" 
 export default async function IntegrationsPage() {
   const user = await getCurrentUser();
   const supabase = await createClient();
+  const barFacilSummary = await getBarFacilIntegration();
 
   const orgIds = [...new Set((user?.memberships ?? []).map((m) => m.organization_id))];
   const fallback = ["00000000-0000-0000-0000-000000000000"];
@@ -183,6 +186,8 @@ export default async function IntegrationsPage() {
           </CardContent>
         </Card>
       )}
+
+      <BarFacilCard summary={barFacilSummary} />
 
       <Card>
         <CardHeader>

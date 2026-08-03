@@ -14,7 +14,7 @@ create extension if not exists "pg_trgm"; -- para similaridade de nomes de produ
 -- ENUMS
 -- ---------------------------------------------------------------------
 create type user_role as enum ('admin_geral','gestor_marca','gestor_loja','analista','somente_leitura','products_viewer');
-create type platform_type as enum ('anota_ai','ifood','csv_import','event_tracking');
+create type platform_type as enum ('anota_ai','ifood','csv_import','event_tracking','bar_facil');
 create type sync_status as enum ('pending','running','success','partial_success','failed');
 create type order_status as enum ('criado','confirmado','em_preparo','saiu_para_entrega','concluido','cancelado');
 create type order_fulfillment as enum ('entrega','retirada','consumo_local');
@@ -1329,3 +1329,53 @@ create index idx_sync_runs_started_at on sync_runs (started_at desc);
 
 alter table integrations add column if not exists last_sync_started_at timestamptz;
 alter table integrations add column if not exists last_order_synced_at timestamptz;
+
+-- ---------------------------------------------------------------------
+-- Conector Bar Fácil — arquitetura preparada, implementação das chamadas
+-- pendente da documentação oficial (ver migration 0017_bar_facil_connector.sql).
+-- ---------------------------------------------------------------------
+alter table integrations add column if not exists connection_status text not null default 'ativo'
+  check (connection_status in ('aguardando_credenciais', 'testando', 'ativo', 'erro'));
+alter table integrations add column if not exists config jsonb not null default '{}'::jsonb;
+
+alter table integration_credentials add column if not exists key text not null default 'token';
+alter table integration_credentials add constraint integration_credentials_integration_key_unique unique (integration_id, key);
+
+create table barfacil_establishment_links (
+  id uuid primary key default gen_random_uuid(),
+  external_establishment_id text not null,
+  external_establishment_name text,
+  external_event_id text,
+  store_id uuid references stores(id) on delete set null,
+  status text not null default 'pendente' check (status in ('pendente', 'vinculado', 'ignorado', 'revisar')),
+  notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (external_establishment_id, external_event_id)
+);
+
+alter table barfacil_establishment_links enable row level security;
+
+create policy barfacil_establishment_links_select on barfacil_establishment_links for select
+  using (
+    exists (
+      select 1 from user_organizations uo
+      where uo.user_id = auth.uid() and uo.role in ('admin_geral', 'gestor_marca', 'gestor_loja')
+    )
+  );
+
+create policy barfacil_establishment_links_write on barfacil_establishment_links for all
+  using (
+    exists (
+      select 1 from user_organizations uo
+      where uo.user_id = auth.uid() and uo.role = 'admin_geral'
+    )
+  )
+  with check (
+    exists (
+      select 1 from user_organizations uo
+      where uo.user_id = auth.uid() and uo.role = 'admin_geral'
+    )
+  );
+
+alter table sync_runs add column if not exists source text not null default 'anota_ai';

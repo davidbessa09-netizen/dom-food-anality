@@ -3,7 +3,7 @@
 // nenhuma tela ou métrica lê diretamente o formato de origem.
 // Ver ARCHITECTURE.md, seção 4.
 
-export type SourcePlatform = "anota_ai" | "ifood" | "csv_import" | "event_tracking";
+export type SourcePlatform = "anota_ai" | "ifood" | "csv_import" | "event_tracking" | "bar_facil";
 
 export interface Provenance {
   source_platform: SourcePlatform;
