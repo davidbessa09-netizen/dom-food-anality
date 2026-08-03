@@ -84,9 +84,9 @@ export function BarFacilCard({ summary }: { summary: BarFacilIntegrationSummary 
         </dl>
 
         <p className="text-xs text-muted-foreground">
-          Extração de dados via API oficial do Bar Fácil (BF Play/TicketMais) — vendas, itens e pagamentos. Recargas e
-          consumo cashless ainda não são classificados automaticamente (a documentação recebida não enumera os tipos de
-          movimento cashless) — ver detalhes com a equipe de desenvolvimento antes de habilitar.
+          Extração de dados via API oficial do Bar Fácil (BF Play/TicketMais) — vendas, itens e pagamentos. Recargas de
+          saldo cashless (movimento-caixa) e consumo (movimento-consumo) nunca são contados como venda de produto — a
+          venda em si já vem completa, com itens, pelo endpoint de vendas.
         </p>
 
         <div className="flex flex-wrap gap-2">

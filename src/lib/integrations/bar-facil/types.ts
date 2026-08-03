@@ -94,15 +94,24 @@ export interface BarFacilMovimentoConsumo {
   codEvento: string;
   dtMovimento: string;
   idCartao: string;
-  tipo: string; // valores não enumerados na documentação
+  tipo: string; // ver BAR_FACIL_MOVIMENTO_CONSUMO_TIPO — confirmado com o Bar Fácil em 2026
   cpf?: string | null;
 }
 
+/** Valores confirmados do campo `tipo` em movimento-consumo (confirmado
+ * verbalmente com o Bar Fácil — a documentação em PDF não enumera isso). */
+export const BAR_FACIL_MOVIMENTO_CONSUMO_TIPO = {
+  RECARGA: "1",
+  CONSUMO: "2",
+} as const;
+
 /**
- * Movimento de caixa — POST /movimento-caixa. `tipoMovimentacao` no
- * exemplo é "Suprimento" (operação de caixa, ex.: reforço de troco) — a
- * documentação não confirma se recargas de saldo cashless aparecem aqui
- * ou em outro tipo de movimentação. Não tratar como venda de produto.
+ * Movimento de caixa — POST /movimento-caixa. Recargas de saldo cashless
+ * aparecem aqui, como um dos valores de `tipoMovimentacao` (o exemplo da
+ * documentação mostra "Suprimento", que é uma operação de caixa comum,
+ * não necessariamente o valor usado pra recarga — o texto exato pro valor
+ * "recarga" ainda não foi confirmado, só que é ESTE endpoint).
+ * NUNCA tratar nenhuma linha daqui como venda de produto.
  */
 export interface BarFacilMovimentoCaixa {
   codMovimentoCaixa: string;

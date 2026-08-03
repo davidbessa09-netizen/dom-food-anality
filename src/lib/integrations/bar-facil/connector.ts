@@ -28,15 +28,16 @@ import type { BarFacilConfig } from "./config";
  *    existem aninhados dentro de cada venda (`venda.pagamentos`); e
  *    estornos são vendas com valor negativo, não uma listagem separada —
  *    ambos já vêm embutidos no retorno de `listSales`.
- *  - Classificação de cashless (recarga vs. consumo vs. venda): a
- *    documentação recebida NÃO enumera os valores possíveis do campo
- *    `tipo` em movimento-consumo, nem confirma onde recargas de saldo
- *    aparecem (movimento-caixa mostra só o exemplo "Suprimento", que é
- *    operação de caixa, não recarga de cartão). Persistir esses dados como
- *    faturamento exigiria adivinhar essa classificação — o que o brief
- *    original proíbe explicitamente. `queryMovimentoConsumo`/
- *    `queryMovimentoCaixa` no adapter já buscam os dados brutos, tipados;
- *    a decisão de como classificá-los fica pendente de confirmação.
+ *  - Persistência de movimento-consumo/movimento-caixa como faturamento:
+ *    confirmado com o Bar Fácil que `movimento-consumo.tipo` 1=recarga e
+ *    2=consumo (ver BAR_FACIL_MOVIMENTO_CONSUMO_TIPO em ./types.ts), e que
+ *    recargas de saldo aparecem em movimento-caixa (`tipoMovimentacao`).
+ *    Mesmo assim, NENHUM dos dois é persistido como pedido/faturamento:
+ *    o consumo cashless (tipo=2) já corresponde à mesma venda que chega
+ *    completa (com itens e preço) pelo endpoint `vendas` — persistir os
+ *    dois duplicaria a mesma venda. `queryMovimentoConsumo`/
+ *    `queryMovimentoCaixa` no adapter buscam os dados brutos, tipados, só
+ *    pra uso futuro de auditoria/conciliação, nunca como fonte de receita.
  */
 export class BarFacilConnector implements IntegrationConnector {
   readonly platform = "bar_facil" as const;
