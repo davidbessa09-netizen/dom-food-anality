@@ -60,6 +60,23 @@ export class BarFacilAdapter {
     return res.json() as Promise<T>;
   }
 
+  /**
+   * A documentação em PDF mostra os retornos como array simples, mas a API
+   * real de /eventos respondeu com um envelope de paginação estilo Laravel
+   * (`{ data: [...], currentPage, total, ... }`) — confirmado ao vivo em
+   * 2026-08-06. Esta função aceita qualquer um dos formatos (array puro,
+   * envelope paginado com `.data`, ou um único objeto) sem quebrar,
+   * garantindo que sempre devolvemos uma lista, mesmo vazia.
+   */
+  private unwrapList<T>(result: unknown): T[] {
+    if (Array.isArray(result)) return result as T[];
+    if (result && typeof result === "object" && Array.isArray((result as { data?: unknown }).data)) {
+      return (result as { data: T[] }).data;
+    }
+    if (result) return [result as T];
+    return [];
+  }
+
   /** Nenhum endpoint de "ping" documentado — usa /eventos (leve, sempre
    * disponível) só pra validar que o token autentica. */
   async testConnection(): Promise<ConnectionStatus> {
@@ -72,16 +89,18 @@ export class BarFacilAdapter {
   }
 
   async listEventos(situacao?: "Ativo" | "Finalizado"): Promise<BarFacilEvento[]> {
-    const result = await this.request<BarFacilEvento | BarFacilEvento[]>("POST", "/eventos", situacao ? { situacao } : {});
-    return Array.isArray(result) ? result : [result];
+    const result = await this.request<unknown>("POST", "/eventos", situacao ? { situacao } : {});
+    return this.unwrapList<BarFacilEvento>(result);
   }
 
   async listAtendentes(): Promise<BarFacilAtendenteListItem[]> {
-    return this.request<BarFacilAtendenteListItem[]>("POST", "/atendentes");
+    const result = await this.request<unknown>("POST", "/atendentes");
+    return this.unwrapList<BarFacilAtendenteListItem>(result);
   }
 
   async listProdutos(): Promise<BarFacilProduto[]> {
-    return this.request<BarFacilProduto[]>("POST", "/produtos");
+    const result = await this.request<unknown>("POST", "/produtos");
+    return this.unwrapList<BarFacilProduto>(result);
   }
 
   async queryVendas(eventoId: number): Promise<BarFacilVenda[]> {
@@ -126,8 +145,8 @@ export class BarFacilAdapter {
   }
 
   private async queryExtraction<T>(endpoint: BarFacilExtractionEndpoint, eventoId: number): Promise<T[]> {
-    const result = await this.request<T[]>("POST", `/${endpoint}`, { evento: eventoId });
-    return Array.isArray(result) ? result : [result];
+    const result = await this.request<unknown>("POST", `/${endpoint}`, { evento: eventoId });
+    return this.unwrapList<T>(result);
   }
 
   private async confirmExtraction(endpoint: BarFacilExtractionEndpoint, eventoId: number): Promise<void> {
