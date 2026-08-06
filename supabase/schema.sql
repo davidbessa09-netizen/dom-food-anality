@@ -1379,3 +1379,9 @@ create policy barfacil_establishment_links_write on barfacil_establishment_links
   );
 
 alter table sync_runs add column if not exists source text not null default 'anota_ai';
+
+-- sales_channels ganha policy de escrita (antes só tinha select) — ver
+-- migration 0018_sales_channels_write_policy.sql.
+create policy sales_channels_write on sales_channels for all
+  using (public.user_can_write_store(store_id))
+  with check (public.user_can_write_store(store_id));

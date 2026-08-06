@@ -76,12 +76,15 @@ export class BarFacilConnector implements IntegrationConnector {
     }
   }
 
-  /** O Bar Fácil agrupa eventos por empresa — cada evento já traz o objeto
-   * `empresa` embutido (ver documentação, endpoint /eventos). */
+  /** O Bar Fácil agrupa eventos por empresa — a documentação mostra o
+   * objeto `empresa` embutido no evento, mas a API real nem sempre traz
+   * esse campo preenchido; tratamos como opcional pra nunca quebrar a
+   * listagem por causa de um evento sem empresa associada. */
   async listOrganizations(): Promise<ExternalOrganization[]> {
     const eventos = await this.requireAdapter().listEventos();
     const byId = new Map<string, ExternalOrganization>();
     for (const evento of eventos) {
+      if (!evento.empresa) continue;
       byId.set(String(evento.empresa.codEmpresa), { externalId: String(evento.empresa.codEmpresa), name: evento.empresa.razaoSocial });
     }
     return [...byId.values()];
@@ -96,7 +99,7 @@ export class BarFacilConnector implements IntegrationConnector {
       externalId: String(e.codEvento),
       externalEventId: String(e.codEvento),
       name: e.descricao,
-      organizationExternalId: String(e.empresa.codEmpresa),
+      organizationExternalId: e.empresa ? String(e.empresa.codEmpresa) : undefined,
     }));
   }
 
