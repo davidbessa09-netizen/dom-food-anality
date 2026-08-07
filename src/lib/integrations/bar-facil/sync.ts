@@ -136,7 +136,7 @@ export async function syncBarFacilIntegration(
 /** Um sales_channel por loja vinculada (platform='bar_facil') — igual ao
  * padrão da Anota AI, necessário pra chave de dedup `sales_channel_id +
  * source_external_id` em orders. */
-async function getOrCreateBarFacilSalesChannel(
+export async function getOrCreateBarFacilSalesChannel(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: SupabaseClient<any, any, any>,
   storeId: string

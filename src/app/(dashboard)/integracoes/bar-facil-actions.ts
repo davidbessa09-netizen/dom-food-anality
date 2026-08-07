@@ -7,9 +7,10 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { logAudit } from "@/lib/audit/log";
 import { BarFacilConnector } from "@/lib/integrations/bar-facil/connector";
 import { BAR_FACIL_CONNECTOR_VERSION } from "@/lib/integrations/bar-facil/adapter";
-import { syncBarFacilIntegration } from "@/lib/integrations/bar-facil/sync";
+import { syncBarFacilIntegration, getOrCreateBarFacilSalesChannel } from "@/lib/integrations/bar-facil/sync";
 import { BAR_FACIL_SECRET_KEYS, type BarFacilConfig } from "@/lib/integrations/bar-facil/config";
 import type { ExternalStore } from "@/lib/integrations/connector";
+import { findOrCreateCategory, persistNormalizedProduct } from "@/lib/integrations/persist-product";
 
 export interface BarFacilIntegrationSummary {
   id: string | null;
@@ -267,6 +268,74 @@ export async function syncBarFacilNow(): Promise<SyncBarFacilResult> {
   revalidatePath("/integracoes");
   revalidatePath("/produtos");
   return result;
+}
+
+export interface SyncBarFacilMenuResult {
+  ok: boolean;
+  productsProcessed: number;
+  error?: string;
+}
+
+/**
+ * Sincroniza SÓ o catálogo (nome + categoria, via POST /produtos) — não
+ * depende de `evento`, diferente de vendas. Sem preço: o retorno de
+ * /produtos não traz `vlrCusto`/preço de venda (só id, nome, categoria) —
+ * o produto fica com `price` vazio até um dia isso vir de outra fonte.
+ * Usa a primeira loja com vínculo "vinculado" como canal de vendas —
+ * o catálogo do Bar Fácil é único por empresa, não por evento.
+ */
+export async function syncBarFacilMenu(): Promise<SyncBarFacilMenuResult> {
+  const supabase = await createClient();
+  const summary = await getBarFacilIntegration();
+
+  if (!summary.id) return { ok: false, productsProcessed: 0, error: "Configure a integração primeiro." };
+
+  const token = await getDecryptedBarFacilToken(supabase, summary.id);
+  if (!token) return { ok: false, productsProcessed: 0, error: "Cadastre o token do Bar Fácil primeiro." };
+
+  const { data: link } = await supabase
+    .from("barfacil_establishment_links")
+    .select("store_id")
+    .eq("status", "vinculado")
+    .not("store_id", "is", null)
+    .limit(1)
+    .maybeSingle();
+
+  if (!link?.store_id) {
+    return { ok: false, productsProcessed: 0, error: "Vincule pelo menos uma loja antes de sincronizar o catálogo." };
+  }
+
+  const { data: storeRow } = await supabase.from("stores").select("brand_id").eq("id", link.store_id).maybeSingle();
+  if (!storeRow) return { ok: false, productsProcessed: 0, error: "Loja vinculada não encontrada." };
+
+  const salesChannelId = await getOrCreateBarFacilSalesChannel(supabase, link.store_id);
+  if (!salesChannelId) return { ok: false, productsProcessed: 0, error: "Não foi possível preparar o canal de vendas." };
+
+  const connector = new BarFacilConnector(summary.config, token);
+  try {
+    const products = await connector.listProducts();
+    const categoryCache = new Map<string, string | null>();
+    let failed = 0;
+
+    for (const product of products) {
+      if (product.category_name && !categoryCache.has(product.category_name)) {
+        categoryCache.set(product.category_name, await findOrCreateCategory(supabase, storeRow.brand_id, product.category_name));
+      }
+      const result = await persistNormalizedProduct(supabase, { ...product, sales_channel_id: salesChannelId });
+      if (!result.ok) failed++;
+    }
+
+    revalidatePath("/correspondencia-produtos");
+    revalidatePath("/categorias");
+
+    return {
+      ok: failed === 0,
+      productsProcessed: products.length,
+      error: failed > 0 ? `${failed} item(ns) falharam ao gravar` : undefined,
+    };
+  } catch (error) {
+    return { ok: false, productsProcessed: 0, error: error instanceof Error ? error.message : "Erro desconhecido" };
+  }
 }
 
 /**

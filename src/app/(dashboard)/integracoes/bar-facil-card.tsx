@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDateTimeBR } from "@/lib/dates/format";
-import { syncBarFacilNow, testBarFacilConnection, type BarFacilIntegrationSummary } from "./bar-facil-actions";
+import { syncBarFacilMenu, syncBarFacilNow, testBarFacilConnection, type BarFacilIntegrationSummary } from "./bar-facil-actions";
 import { BarFacilConfigDialog } from "./bar-facil-config-dialog";
 import { BarFacilMappingDialog } from "./bar-facil-mapping-dialog";
 
@@ -26,6 +26,7 @@ function statusVariant(status: BarFacilIntegrationSummary["connectionStatus"]): 
 export function BarFacilCard({ summary }: { summary: BarFacilIntegrationSummary }) {
   const [testing, setTesting] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [syncingMenu, setSyncingMenu] = useState(false);
 
   async function handleTestConnection() {
     setTesting(true);
@@ -49,6 +50,20 @@ export function BarFacilCard({ summary }: { summary: BarFacilIntegrationSummary 
       }
     } finally {
       setSyncing(false);
+    }
+  }
+
+  async function handleSyncMenu() {
+    setSyncingMenu(true);
+    try {
+      const result = await syncBarFacilMenu();
+      if (result.ok) {
+        toast.success(`Catálogo sincronizado: ${result.productsProcessed} produto(s). Aprovar em "Correspondência de produtos".`);
+      } else {
+        toast.error(result.error ?? "Falha ao sincronizar catálogo.");
+      }
+    } finally {
+      setSyncingMenu(false);
     }
   }
 
@@ -101,6 +116,9 @@ export function BarFacilCard({ summary }: { summary: BarFacilIntegrationSummary 
             className="bg-[color:var(--dom-gold)] text-white hover:bg-[color:var(--dom-gold-hover)]"
           >
             {syncing ? "Sincronizando..." : "Sincronizar agora"}
+          </Button>
+          <Button size="sm" variant="outline" onClick={handleSyncMenu} disabled={syncingMenu}>
+            {syncingMenu ? "Sincronizando..." : "Sincronizar catálogo"}
           </Button>
           <BarFacilMappingDialog />
         </div>
