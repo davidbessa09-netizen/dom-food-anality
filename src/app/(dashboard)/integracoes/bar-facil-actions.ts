@@ -429,11 +429,11 @@ export async function upsertBarFacilEstablishmentLink(_prev: UpsertLinkState, fo
   };
 
   const result = linkId
-    ? await supabase.from("barfacil_establishment_links").update(payload).eq("id", linkId)
-    : await supabase.from("barfacil_establishment_links").insert(payload);
+    ? await supabase.from("barfacil_establishment_links").update(payload).eq("id", linkId).select("id").single()
+    : await supabase.from("barfacil_establishment_links").insert(payload).select("id").single();
 
-  if (result.error) {
-    return { error: "Não foi possível salvar o vínculo." };
+  if (result.error || !result.data) {
+    return { error: `Não foi possível salvar o vínculo${result.error ? `: ${result.error.message}` : " (nenhuma linha retornada — verifique suas permissões)"}.` };
   }
 
   revalidatePath("/integracoes");
