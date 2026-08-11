@@ -99,10 +99,13 @@ export async function syncBarFacilIntegration(
 
   await supabase.from("integrations").update({ last_sync_started_at: new Date().toISOString() }).eq("id", integration.id);
 
+  // Sem last_synced_at ainda (primeira sincronização, ou reset manual),
+  // usa a "data inicial da importação" configurada em vez de só 24h —
+  // senão uma venda de alguns dias atrás nunca seria buscada (a janela
+  // incremental sempre avança pra frente a cada ciclo, mesmo vazio).
+  const neverSyncedFallback = config.importStartDate ? new Date(config.importStartDate).toISOString() : new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const sinceIso =
-    trigger === "reconciliation"
-      ? computeReconciliationSince()
-      : (computeSyncSince(integration.last_synced_at) ?? new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
+    trigger === "reconciliation" ? computeReconciliationSince() : (computeSyncSince(integration.last_synced_at) ?? neverSyncedFallback);
   const since = new Date(sinceIso);
   const until = new Date();
 
