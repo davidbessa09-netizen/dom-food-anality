@@ -110,6 +110,27 @@ export class BarFacilAdapter {
     await this.confirmExtraction("vendas", eventoId);
   }
 
+  /**
+   * Filtro alternativo confirmado ao vivo em 2026-08-07: /vendas aceita
+   * `dtInicio`/`dtTermino` ("Y-m-d H:i:s") em vez de `evento` — necessário
+   * pra estabelecimentos que não usam o conceito de evento no Bar Fácil
+   * (ex.: bar fixo com uso diário). Sem cursor do lado do Bar Fácil nesse
+   * modo (não há PUT/DELETE documentado pra filtro de data) — o dedup por
+   * `codVenda` na persistência garante idempotência mesmo re-buscando a
+   * mesma janela de tempo em ciclos seguidos.
+   */
+  async queryVendasPorPeriodo(dtInicio: Date, dtTermino: Date): Promise<BarFacilVenda[]> {
+    const result = await this.request<unknown>("POST", "/vendas", {
+      dtInicio: this.formatDateTime(dtInicio),
+      dtTermino: this.formatDateTime(dtTermino),
+    });
+    return this.unwrapList<BarFacilVenda>(result);
+  }
+
+  private formatDateTime(date: Date): string {
+    return date.toISOString().slice(0, 19).replace("T", " ");
+  }
+
   async queryValidacoes(eventoId: number): Promise<BarFacilValidacao[]> {
     return this.queryExtraction<BarFacilValidacao>("validacoes", eventoId);
   }

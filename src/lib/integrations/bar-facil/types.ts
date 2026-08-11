@@ -15,19 +15,25 @@ export interface BarFacilProdutoRef {
   categoria: string | null;
   listaPreco?: string;
   combo?: unknown;
-  vlrCusto?: number;
+  vlrCusto?: number | string; // confirmado como string na API real ("55.00"), número no exemplo do PDF
   imagem?: string;
 }
 
+/**
+ * Confirmado ao vivo em 2026-08-07: os campos numéricos de item de venda
+ * vêm como STRING na API real (ex.: "qtdItem": "1.000", "vlrItem": "64.90"),
+ * diferente do exemplo em número do PDF ("qtdItem": 3, "vlrItem": 18.00).
+ * Aceita os dois formatos — a conversão pra number acontece em mapping.ts.
+ */
 export interface BarFacilItemVenda {
   codItemVenda: number;
   produto: BarFacilProdutoRef;
   nmTicket?: number;
-  qtdItem: number;
-  vlrItem: number;
-  vlrItemUnitario: number;
-  vlrItemComissao?: number;
-  vlrItemComissaoUnitario?: number;
+  qtdItem: number | string;
+  vlrItem: number | string;
+  vlrItemUnitario: number | string;
+  vlrItemComissao?: number | string;
+  vlrItemComissaoUnitario?: number | string;
   cortesia?: boolean;
 }
 
@@ -45,15 +51,16 @@ export interface BarFacilPagamento {
  * indicador confirmado de estorno.
  */
 export interface BarFacilVenda {
-  codVenda: number; // chave única — usada como cursor (ID sequencial confirmado via PUT)
+  codVenda: number; // chave única — usada como ID de dedup na persistência
   codVendaTerminal?: number;
   codTerminal?: number;
   codEmpresa: number;
-  codEvento: number;
+  codEvento: number | null; // confirmado null quando a venda não está associada a um evento
   atendente?: BarFacilAtendente;
   dtVenda: string; // "yyyy-MM-dd HH:mm:ss"
+  dtConfirmado?: string; // confirmado ao vivo — presente na resposta real, ausente do PDF
   tipo: string; // "Venda" no exemplo — outros valores não documentados
-  setor?: string | null;
+  setor?: string | number | null;
   cpf?: string | null;
   chaveNfce?: string | null;
   pessoa?: unknown;

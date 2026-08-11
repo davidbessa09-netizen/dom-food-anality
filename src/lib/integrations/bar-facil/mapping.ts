@@ -1,21 +1,30 @@
 import type { NormalizedOrder, NormalizedOrderItem } from "@/lib/integrations/types";
 import type { BarFacilVenda } from "./types";
 
+/** A API real devolve campos numéricos como string (ex.: "64.90",
+ * "1.000") — confirmado ao vivo em 2026-08-07, diferente do exemplo em
+ * número do PDF. Aceita os dois formatos sem quebrar. */
+function toNumber(value: number | string | undefined): number {
+  if (typeof value === "number") return value;
+  if (typeof value === "string") return Number.parseFloat(value) || 0;
+  return 0;
+}
+
 /**
  * "Registros com valores NEGATIVOS são referentes ao tipo ESTORNO" — nota
  * literal da documentação oficial. É o único sinal de cancelamento
  * confirmado; não existe campo de status separado documentado.
  */
 export function isBarFacilEstorno(venda: BarFacilVenda): boolean {
-  return venda.items.reduce((sum, item) => sum + item.vlrItem, 0) < 0;
+  return venda.items.reduce((sum, item) => sum + toNumber(item.vlrItem), 0) < 0;
 }
 
 function mapItems(venda: BarFacilVenda): NormalizedOrderItem[] {
   return venda.items.map((item) => ({
     original_name: item.produto.descricao,
-    quantity: Math.abs(item.qtdItem),
-    unit_price: Math.abs(item.vlrItemUnitario),
-    total_price: Math.abs(item.vlrItem),
+    quantity: Math.abs(toNumber(item.qtdItem)),
+    unit_price: Math.abs(toNumber(item.vlrItemUnitario)),
+    total_price: Math.abs(toNumber(item.vlrItem)),
   }));
 }
 
@@ -41,7 +50,7 @@ export function toNormalizedBarFacilOrder(
   context: { store_id: string; sales_channel_id: string; connectorVersion: string; timezone: string }
 ): NormalizedOrder {
   const estorno = isBarFacilEstorno(venda);
-  const grossAmount = Math.abs(venda.items.reduce((sum, item) => sum + item.vlrItem, 0));
+  const grossAmount = Math.abs(venda.items.reduce((sum, item) => sum + toNumber(item.vlrItem), 0));
   const orderedAt = parseBarFacilDate(venda.dtVenda, context.timezone);
 
   return {

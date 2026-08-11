@@ -93,4 +93,22 @@ describe("toNormalizedBarFacilOrder", () => {
     const b = toNormalizedBarFacilOrder(buildVenda({ codVenda: 2 }), context);
     expect(a.source_external_id).not.toBe(b.source_external_id);
   });
+
+  it("aceita valores como string (confirmado ao vivo em 2026-08-07: a API real devolve qtdItem/vlrItem como string)", () => {
+    const venda = buildVenda({
+      codEvento: null,
+      items: [
+        {
+          codItemVenda: 431769892,
+          produto: { codProduto: 737075, descricao: "TORRE PILSEN", categoria: "CERVEJAS", vlrCusto: "55.00" },
+          qtdItem: "1.000",
+          vlrItem: "64.90",
+          vlrItemUnitario: "64.90",
+        },
+      ],
+    });
+    const result = toNormalizedBarFacilOrder(venda, context);
+    expect(result.gross_amount).toBe(64.9);
+    expect(result.items[0]).toMatchObject({ quantity: 1, unit_price: 64.9, total_price: 64.9 });
+  });
 });
