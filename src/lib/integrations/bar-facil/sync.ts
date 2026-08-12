@@ -111,6 +111,11 @@ export async function syncBarFacilIntegration(
 
   let ordersProcessed = 0;
   let totalFailed = 0;
+  // true quando a busca chegou até `until` sem mais nada pendente — só
+  // nesse caso é seguro avançar last_synced_at até `until`. Se parar por
+  // ter batido o teto de páginas (ainda há backfill grande pela frente),
+  // fica false e o cursor só avança até onde realmente foi processado.
+  let caughtUp = false;
 
   // A API não documenta paginação em /vendas no modo por período, mas
   // confirmado ao vivo em 2026-08-12: ela limita a ~50 registros por
@@ -127,7 +132,13 @@ export async function syncBarFacilIntegration(
   try {
     for (let page = 0; page < MAX_PAGES_PER_RUN; page++) {
       const vendas = await adapter.queryVendasPorPeriodo(cursor, until);
-      if (vendas.length === 0) break;
+      if (vendas.length === 0) {
+        // Nenhuma venda nova nessa janela — não é falha, é só um período
+        // parado (ex.: fora do horário de funcionamento). Ainda assim
+        // "chegamos até `until`", então o cursor pode avançar.
+        caughtUp = true;
+        break;
+      }
 
       let pageFailed = 0;
       let maxDtVenda: string | null = null;
@@ -158,11 +169,21 @@ export async function syncBarFacilIntegration(
 
       await supabase.from("integrations").update({ last_synced_at: cursor.toISOString(), last_cursor: cursor.toISOString() }).eq("id", integration.id);
 
-      if (vendas.length < PAGE_SIZE_HINT) break; // lote menor que o teto — provavelmente é a última página
+      if (vendas.length < PAGE_SIZE_HINT) {
+        caughtUp = true;
+        break; // lote menor que o teto — chegamos ao fim dos dados disponíveis
+      }
     }
 
     if (totalFailed > 0) {
       errors.push(`${totalFailed} venda(s) não gravada(s).`);
+    }
+
+    // Marca "checado agora" mesmo sem venda nova — senão o indicador de
+    // frescor da UI (classifySyncFreshness) acha que parou de sincronizar
+    // só porque não houve venda nova por um tempo.
+    if (totalFailed === 0 && caughtUp) {
+      await supabase.from("integrations").update({ last_synced_at: until.toISOString(), last_cursor: until.toISOString() }).eq("id", integration.id);
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro desconhecido";
