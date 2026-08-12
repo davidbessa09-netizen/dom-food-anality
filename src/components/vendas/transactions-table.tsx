@@ -24,6 +24,8 @@ export interface TransactionRow {
   fulfillmentLabel: string;
   paymentLabel: string;
   neighborhood: string | null;
+  /** Terminal/caixa que registrou a venda — só o Bar Fácil informa isso hoje. */
+  terminal: string | null;
   customerName: string | null;
   customerPhone: string | null;
   grossAmount: number;
@@ -120,6 +122,12 @@ function OrderDetailDrawer({ row, open, onOpenChange }: { row: TransactionRow | 
                 <p className="text-xs text-muted-foreground">Bairro</p>
                 <p className="font-medium">{row.neighborhood ?? "Não informado"}</p>
               </div>
+              {row.terminal && (
+                <div>
+                  <p className="text-xs text-muted-foreground">Terminal</p>
+                  <p className="font-medium">{row.terminal}</p>
+                </div>
+              )}
               <div>
                 <p className="text-xs text-muted-foreground">Cliente</p>
                 <p className="font-medium">{row.customerName ?? "Não identificado"}</p>

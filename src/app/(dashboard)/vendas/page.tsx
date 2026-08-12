@@ -408,7 +408,7 @@ async function TransactionsTab({
   let query = supabase
     .from("orders")
     .select(
-      "id, store_id, ordered_at, status, fulfillment_type, source_platform, payment_method, neighborhood_raw, gross_amount, discount_amount, delivery_fee_amount, net_amount, customers(full_name, phone_masked), order_items(original_name, quantity, is_addon, total_price)",
+      "id, store_id, ordered_at, status, fulfillment_type, source_platform, payment_method, neighborhood_raw, gross_amount, discount_amount, delivery_fee_amount, net_amount, raw_payload, customers(full_name, phone_masked), order_items(original_name, quantity, is_addon, total_price)",
       { count: "exact" }
     )
     .in("store_id", storeFallback)
@@ -441,8 +441,18 @@ async function TransactionsTab({
     discount_amount: number;
     delivery_fee_amount: number;
     net_amount: number | null;
+    raw_payload: Record<string, unknown> | null;
     customers: { full_name: string | null; phone_masked: string | null } | { full_name: string | null; phone_masked: string | null }[] | null;
     order_items: { original_name: string; quantity: number; is_addon: boolean; total_price: number }[];
+  }
+
+  /** Terminal/caixa que registrou a venda — hoje só o Bar Fácil informa
+   * isso (`codTerminal`/`codVendaTerminal` no payload bruto salvo em
+   * raw_payload). Outras origens não têm esse dado, então fica ausente. */
+  function extractTerminal(sourcePlatform: string, rawPayload: Record<string, unknown> | null): string | null {
+    if (sourcePlatform !== "bar_facil" || !rawPayload) return null;
+    const terminal = rawPayload.codTerminal ?? rawPayload.codVendaTerminal;
+    return terminal !== undefined && terminal !== null ? String(terminal) : null;
   }
 
   const rows: TransactionRow[] = ((ordersRaw ?? []) as unknown as OrderRaw[]).map((o) => {
@@ -457,6 +467,7 @@ async function TransactionsTab({
       fulfillmentLabel: FULFILLMENT_OPTIONS.find((f) => f.value === o.fulfillment_type)?.label ?? o.fulfillment_type,
       paymentLabel: formatPaymentMethod(o.payment_method),
       neighborhood: o.neighborhood_raw,
+      terminal: extractTerminal(o.source_platform, o.raw_payload),
       customerName: customer?.full_name ?? null,
       customerPhone: customer?.phone_masked ?? null,
       grossAmount: o.gross_amount,
