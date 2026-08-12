@@ -57,9 +57,12 @@ async function getLastDataReceivedAt(
   const scopedStoreIds = storeIds.length ? storeIds : fallback;
 
   const service = createServiceClient();
+  const timestamps: string[] = [];
+
+  // Integrações com um sales_channel por loja de verdade (Anota AI, CSV) —
+  // casam direto pelo canal da loja.
   const { data: channels } = await service.from("sales_channels").select("id").in("store_id", scopedStoreIds);
   const channelIds = (channels ?? []).map((c) => c.id);
-
   if (channelIds.length > 0) {
     const { data: integrations } = await service
       .from("integrations")
@@ -69,9 +72,31 @@ async function getLastDataReceivedAt(
       .not("last_synced_at", "is", null)
       .order("last_synced_at", { ascending: false })
       .limit(1);
-    if (integrations && integrations.length > 0) {
-      return integrations[0].last_synced_at;
-    }
+    if (integrations?.[0]?.last_synced_at) timestamps.push(integrations[0].last_synced_at);
+  }
+
+  // Bar Fácil é uma integração ÚNICA por empresa, não por loja — o
+  // `integrations.sales_channel_id` dela aponta pra um canal "placeholder"
+  // criado antes de qualquer loja ser vinculada, nunca pro canal real da
+  // loja. O vínculo de verdade fica em barfacil_establishment_links.
+  const { data: barFacilLinks } = await service
+    .from("barfacil_establishment_links")
+    .select("store_id")
+    .eq("status", "vinculado")
+    .in("store_id", scopedStoreIds);
+  if (barFacilLinks && barFacilLinks.length > 0) {
+    const { data: barFacilIntegration } = await service
+      .from("integrations")
+      .select("last_synced_at")
+      .eq("platform", "bar_facil")
+      .eq("is_active", true)
+      .not("last_synced_at", "is", null)
+      .maybeSingle();
+    if (barFacilIntegration?.last_synced_at) timestamps.push(barFacilIntegration.last_synced_at);
+  }
+
+  if (timestamps.length > 0) {
+    return timestamps.sort().reverse()[0];
   }
 
   const { data } = await supabase
