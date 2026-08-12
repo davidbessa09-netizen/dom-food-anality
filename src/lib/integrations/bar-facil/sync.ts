@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { decryptSecret } from "@/lib/security/crypto";
 import { persistNormalizedOrder } from "@/lib/integrations/persist-order";
 import { computeSyncSince, computeReconciliationSince } from "@/lib/integrations/sync-window";
+import { broadcastSyncCompleted } from "@/lib/integrations/realtime-broadcast";
 import { BarFacilAdapter, BAR_FACIL_CONNECTOR_VERSION } from "./adapter";
 import { toNormalizedBarFacilOrder } from "./mapping";
 import type { BarFacilConfig } from "./config";
@@ -184,6 +185,18 @@ export async function syncBarFacilIntegration(
     // só porque não houve venda nova por um tempo.
     if (totalFailed === 0 && caughtUp) {
       await supabase.from("integrations").update({ last_synced_at: until.toISOString(), last_cursor: until.toISOString() }).eq("id", integration.id);
+    }
+
+    // Avisa telas conectadas (Produtos vendidos, viewer restrito) sem
+    // polling — faltava aqui (só existia na Anota AI), o que deixava a
+    // tela "Ao vivo" sem nunca reagir a uma venda nova do Bar Fácil até
+    // o próximo poll de 60s ou uma troca manual de filtro.
+    if (totalFailed === 0 && ordersProcessed > 0) {
+      await broadcastSyncCompleted(supabase, {
+        storeIds: [storeId],
+        ordersProcessed,
+        syncedAt: new Date().toISOString(),
+      });
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro desconhecido";
