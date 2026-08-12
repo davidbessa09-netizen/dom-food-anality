@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
 import { resolvePeriod, APP_TIMEZONE, type PeriodPreset } from "@/lib/dates/period";
 import { buildViewerProductSummaries, type ViewerProductSummary } from "@/lib/metrics/products-viewer";
 import type { SaleItemEvent } from "@/lib/metrics/live-sales";
@@ -34,21 +35,49 @@ interface ViewerOrderRow {
 }
 
 /**
- * Aproximação de "última sincronização" pro perfil restrito: como esse
- * papel não tem select em `integrations` (ver migration 0014), usa o
- * `created_at` mais recente entre os pedidos das lojas autorizadas como
- * indicador de frescor dos dados — não é o horário exato da última
- * tentativa, mas reflete quando o dado mais novo realmente chegou.
+ * Status real de sincronização pro perfil restrito. O papel products_viewer
+ * não tem select em `integrations` (ver migration 0014) — usar o
+ * `created_at` do pedido mais recente como substituto (versão antiga desta
+ * função) confundia "sem venda nova há um tempo" com "sincronização
+ * falhou": um período parado (ex.: entre picos de movimento) já bastava
+ * pra disparar "Falha na atualização automática" mesmo com o ciclo
+ * automático rodando perfeitamente a cada 5 minutos.
+ *
+ * Em vez disso, usa a service role só pra ler `last_synced_at` das
+ * integrações ativas ligadas às lojas autorizadas — nenhum outro dado
+ * sensível (token, config) é exposto, só o timestamp — e retorna o mais
+ * recente entre elas. Fallback pro `created_at` de pedido só quando a
+ * loja não tem nenhuma integração ativa (ex.: só importação por CSV).
  */
 async function getLastDataReceivedAt(
   supabase: Awaited<ReturnType<typeof createClient>>,
   storeIds: string[]
 ): Promise<string | null> {
   const fallback = ["00000000-0000-0000-0000-000000000000"];
+  const scopedStoreIds = storeIds.length ? storeIds : fallback;
+
+  const service = createServiceClient();
+  const { data: channels } = await service.from("sales_channels").select("id").in("store_id", scopedStoreIds);
+  const channelIds = (channels ?? []).map((c) => c.id);
+
+  if (channelIds.length > 0) {
+    const { data: integrations } = await service
+      .from("integrations")
+      .select("last_synced_at")
+      .in("sales_channel_id", channelIds)
+      .eq("is_active", true)
+      .not("last_synced_at", "is", null)
+      .order("last_synced_at", { ascending: false })
+      .limit(1);
+    if (integrations && integrations.length > 0) {
+      return integrations[0].last_synced_at;
+    }
+  }
+
   const { data } = await supabase
     .from("orders")
     .select("created_at")
-    .in("store_id", storeIds.length ? storeIds : fallback)
+    .in("store_id", scopedStoreIds)
     .order("created_at", { ascending: false })
     .limit(1);
   return data?.[0]?.created_at ?? null;
