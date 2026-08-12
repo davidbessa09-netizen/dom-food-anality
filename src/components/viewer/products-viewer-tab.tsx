@@ -228,6 +228,7 @@ export function ProductsViewerTab() {
   }, [terminalRows, search]);
 
   const totalUnits = filteredSummaries.reduce((sum, s) => sum + s.quantity, 0);
+  const totalTerminalUnits = filteredTerminalRows.reduce((sum, r) => sum + r.quantity, 0);
   const hasMultipleStores = (data?.storeOptions.length ?? 0) > 1;
   const storeLabel =
     !data || data.storeOptions.length === 0
@@ -362,11 +363,10 @@ export function ProductsViewerTab() {
         )}
       </div>
 
-      {view === "produtos" && (
-        <p className="text-sm text-muted-foreground">
-          Total de unidades vendidas: <span className="font-semibold text-foreground tabular-nums">{totalUnits}</span>
-        </p>
-      )}
+      <p className="text-sm text-muted-foreground">
+        Total de unidades vendidas:{" "}
+        <span className="font-semibold text-foreground tabular-nums">{view === "produtos" ? totalUnits : totalTerminalUnits}</span>
+      </p>
 
       {view === "produtos" && (loading && !data ? (
         <div className="space-y-1">
