@@ -11,6 +11,7 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuTrigger,
+  DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 import {
   getViewerProductsSold,
@@ -69,7 +70,10 @@ export function ProductsViewerTab() {
   const [lastFetchedAt, setLastFetchedAt] = useState<Date | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [terminalRows, setTerminalRows] = useState<ViewerTerminalSaleRow[] | null>(null);
+  const [terminalOptions, setTerminalOptions] = useState<string[]>([]);
   const [terminalLoading, setTerminalLoading] = useState(false);
+  const [customDate, setCustomDate] = useState<string>("");
+  const [selectedTerminal, setSelectedTerminal] = useState<string | null>(null);
 
   const fetchingRef = useRef(false);
   const selectedStoresKey = selectedStores.join(",");
@@ -98,15 +102,24 @@ export function ProductsViewerTab() {
   }, [refresh]);
 
   // Aba "Por terminal" busca sob demanda, só quando selecionada — evita
-  // carregar dado que a maioria dos acessos nunca vai ver.
+  // carregar dado que a maioria dos acessos nunca vai ver. Data específica
+  // (customDate) substitui o período rápido; terminal filtra no servidor.
   useEffect(() => {
     if (view !== "terminal") return;
     let cancelled = false;
     async function load() {
       setTerminalLoading(true);
       try {
-        const rows = await getViewerSalesByTerminal({ periodPreset: period, storeIds: selectedStores });
-        if (!cancelled) setTerminalRows(rows);
+        const result = await getViewerSalesByTerminal({
+          periodPreset: period,
+          customDate: customDate || null,
+          storeIds: selectedStores,
+          terminal: selectedTerminal,
+        });
+        if (!cancelled) {
+          setTerminalRows(result.rows);
+          setTerminalOptions(result.terminalOptions);
+        }
       } finally {
         if (!cancelled) setTerminalLoading(false);
       }
@@ -117,7 +130,7 @@ export function ProductsViewerTab() {
       clearTimeout(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view, period, selectedStoresKey]);
+  }, [view, period, selectedStoresKey, customDate, selectedTerminal]);
 
   // Realtime: nada de polling contínuo — carrega uma vez, mantém uma
   // assinatura viva, e só refaz a consulta quando um evento real chega (ou
@@ -268,15 +281,44 @@ export function ProductsViewerTab() {
             <button
               key={p.value}
               type="button"
-              onClick={() => setPeriod(p.value)}
+              onClick={() => {
+                setPeriod(p.value);
+                if (view === "terminal") setCustomDate("");
+              }}
               className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                period === p.value ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                period === p.value && !customDate ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
               }`}
             >
               {p.label}
             </button>
           ))}
         </div>
+
+        {view === "terminal" && (
+          <Input
+            type="date"
+            value={customDate}
+            onChange={(e) => setCustomDate(e.target.value)}
+            className="h-9 w-36 text-sm"
+            aria-label="Data específica"
+          />
+        )}
+
+        {view === "terminal" && terminalOptions.length > 0 && (
+          <DropdownMenu>
+            <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
+              {selectedTerminal ? `Terminal ${selectedTerminal}` : "Terminal"}
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuItem onClick={() => setSelectedTerminal(null)}>Todos os terminais</DropdownMenuItem>
+              {terminalOptions.map((t) => (
+                <DropdownMenuItem key={t} onClick={() => setSelectedTerminal(t)}>
+                  Terminal {t}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
 
         {hasMultipleStores && (
           <DropdownMenu>

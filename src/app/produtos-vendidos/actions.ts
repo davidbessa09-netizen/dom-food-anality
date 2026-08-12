@@ -1,9 +1,11 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
-import { resolvePeriod, type PeriodPreset } from "@/lib/dates/period";
+import { resolvePeriod, APP_TIMEZONE, type PeriodPreset } from "@/lib/dates/period";
 import { buildViewerProductSummaries, type ViewerProductSummary } from "@/lib/metrics/products-viewer";
 import type { SaleItemEvent } from "@/lib/metrics/live-sales";
+import { TZDate } from "@date-fns/tz";
+import { endOfDay, startOfDay } from "date-fns";
 
 export type ViewerPeriodPreset = "hoje" | "ontem" | "7d";
 
@@ -111,11 +113,30 @@ export async function getViewerProductsSold(filters: ViewerFilters): Promise<Vie
   };
 }
 
+export interface ViewerTerminalFilters {
+  periodPreset: ViewerPeriodPreset;
+  /** Data específica ("yyyy-MM-dd", fuso America/Sao_Paulo) — quando
+   * informada, substitui periodPreset por esse dia exato. */
+  customDate?: string | null;
+  storeIds: string[];
+  /** Filtra pelo valor exato de terminal (o mesmo texto retornado em
+   * ViewerTerminalSaleRow.terminal) — vazio/undefined = todos. */
+  terminal?: string | null;
+}
+
 export interface ViewerTerminalSaleRow {
   productName: string;
   quantity: number;
   orderedAt: string;
   terminal: string | null;
+}
+
+function resolveViewerPeriod(periodPreset: ViewerPeriodPreset, customDate?: string | null) {
+  if (customDate) {
+    const day = new TZDate(`${customDate}T00:00:00`, APP_TIMEZONE);
+    return { start: startOfDay(day), end: endOfDay(day) };
+  }
+  return resolvePeriod(periodPreset as PeriodPreset);
 }
 
 /** Terminal/caixa que registrou a venda — só o Bar Fácil informa isso hoje
@@ -134,16 +155,25 @@ interface ViewerTerminalOrderRow {
   order_items: { original_name: string; quantity: number; is_addon: boolean }[];
 }
 
+export interface ViewerTerminalData {
+  rows: ViewerTerminalSaleRow[];
+  /** Terminais distintos vistos no período/lojas selecionados (antes do
+   * filtro de terminal) — pra popular o seletor sem precisar de uma
+   * consulta separada. */
+  terminalOptions: string[];
+}
+
 /**
  * Lista simples "Produto / Horário / Terminal" — sem valor, a pedido
  * explícito da gerência. Uma linha por item de venda (não agregada por
  * produto como a aba principal), pra deixar claro qual terminal vendeu
- * cada item específico.
+ * cada item específico. Aceita uma data exata (customDate) em vez do
+ * período pré-definido, e um filtro de terminal — ex.: "01/08/26,
+ * terminal 89638, produtos vendidos".
  */
-export async function getViewerSalesByTerminal(filters: ViewerFilters): Promise<ViewerTerminalSaleRow[]> {
+export async function getViewerSalesByTerminal(filters: ViewerTerminalFilters): Promise<ViewerTerminalData> {
   const supabase = await createClient();
-  const preset: PeriodPreset = filters.periodPreset;
-  const period = resolvePeriod(preset);
+  const period = resolveViewerPeriod(filters.periodPreset, filters.customDate);
 
   const { data: stores } = await supabase.from("stores").select("id").eq("is_active", true);
   const authorizedStoreIds = (stores ?? []).map((s) => s.id);
@@ -160,7 +190,7 @@ export async function getViewerSalesByTerminal(filters: ViewerFilters): Promise<
 
   const rows = (orders ?? []) as unknown as ViewerTerminalOrderRow[];
 
-  return rows.flatMap((order) => {
+  const allRows: ViewerTerminalSaleRow[] = rows.flatMap((order) => {
     const terminal = extractTerminal(order.source_platform, order.raw_payload);
     return order.order_items
       .filter((item) => !item.is_addon)
@@ -171,4 +201,9 @@ export async function getViewerSalesByTerminal(filters: ViewerFilters): Promise<
         terminal,
       }));
   });
+
+  const terminalOptions = [...new Set(allRows.map((r) => r.terminal).filter((t): t is string => !!t))].sort();
+  const filteredRows = filters.terminal ? allRows.filter((r) => r.terminal === filters.terminal) : allRows;
+
+  return { rows: filteredRows, terminalOptions };
 }
