@@ -11,7 +11,6 @@ export interface BarFacilSyncResult {
   eventosProcessed: number;
   ordersProcessed: number;
   errors: string[];
-  debug?: { since: string; until: string; vendasFetched: number; lastSyncedAtBefore: string | null };
 }
 
 /**
@@ -111,11 +110,9 @@ export async function syncBarFacilIntegration(
   const until = new Date();
 
   let ordersProcessed = 0;
-  let vendasFetched = 0;
 
   try {
     const vendas = await adapter.queryVendasPorPeriodo(since, until);
-    vendasFetched = vendas.length;
 
     let failed = 0;
     for (const venda of vendas) {
@@ -142,13 +139,7 @@ export async function syncBarFacilIntegration(
     errors.push(message);
   }
 
-  return {
-    ok: errors.length === 0,
-    eventosProcessed: 1,
-    ordersProcessed,
-    errors,
-    debug: { since: since.toISOString(), until: until.toISOString(), vendasFetched, lastSyncedAtBefore: integration.last_synced_at },
-  };
+  return { ok: errors.length === 0, eventosProcessed: 1, ordersProcessed, errors };
 }
 
 /** Um sales_channel por loja vinculada (platform='bar_facil') — igual ao
