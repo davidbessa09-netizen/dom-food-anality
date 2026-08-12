@@ -106,33 +106,63 @@ export async function syncBarFacilIntegration(
   const neverSyncedFallback = config.importStartDate ? new Date(config.importStartDate).toISOString() : new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const sinceIso =
     trigger === "reconciliation" ? computeReconciliationSince() : (computeSyncSince(integration.last_synced_at) ?? neverSyncedFallback);
-  const since = new Date(sinceIso);
   const until = new Date();
+  let cursor = new Date(sinceIso);
 
   let ordersProcessed = 0;
+  let totalFailed = 0;
+
+  // A API não documenta paginação em /vendas no modo por período, mas
+  // confirmado ao vivo em 2026-08-12: ela limita a ~50 registros por
+  // chamada, sem sinalizar que há mais. Por isso pagina avançando o
+  // cursor pra logo depois da última venda recebida, repetindo até um
+  // lote menor que o teto aparecer (sinal de que chegou ao fim). Salva
+  // `last_synced_at` a cada página bem-sucedida — se a função serverless
+  // for encerrada no meio de um backfill grande, o próximo ciclo de 5min
+  // continua exatamente de onde parou, sem perder nem duplicar nada
+  // (dedup por codVenda garante isso mesmo se uma página for reprocessada).
+  const PAGE_SIZE_HINT = 50;
+  const MAX_PAGES_PER_RUN = 15; // ~750 vendas por execução — deixa margem de tempo pro serverless
 
   try {
-    const vendas = await adapter.queryVendasPorPeriodo(since, until);
+    for (let page = 0; page < MAX_PAGES_PER_RUN; page++) {
+      const vendas = await adapter.queryVendasPorPeriodo(cursor, until);
+      if (vendas.length === 0) break;
 
-    let failed = 0;
-    for (const venda of vendas) {
-      const normalized = toNormalizedBarFacilOrder(venda, {
-        store_id: storeId,
-        sales_channel_id: salesChannelId,
-        connectorVersion: BAR_FACIL_CONNECTOR_VERSION,
-        timezone,
-      });
-      const result = await persistNormalizedOrder(supabase, normalized, organizationId, { source: "bar_facil" });
-      if (result.ok) ordersProcessed++;
-      else failed++;
+      let pageFailed = 0;
+      let maxDtVenda: string | null = null;
+      for (const venda of vendas) {
+        const normalized = toNormalizedBarFacilOrder(venda, {
+          store_id: storeId,
+          sales_channel_id: salesChannelId,
+          connectorVersion: BAR_FACIL_CONNECTOR_VERSION,
+          timezone,
+        });
+        const result = await persistNormalizedOrder(supabase, normalized, organizationId, { source: "bar_facil" });
+        if (result.ok) {
+          ordersProcessed++;
+          if (!maxDtVenda || venda.dtVenda > maxDtVenda) maxDtVenda = venda.dtVenda;
+        } else {
+          pageFailed++;
+        }
+      }
+      totalFailed += pageFailed;
+
+      // Só avança o cursor se a página inteira foi gravada — senão para
+      // aqui, deixa o próximo ciclo reprocessar a mesma página inteira.
+      if (pageFailed > 0 || !maxDtVenda) break;
+
+      const nextCursor = new Date(maxDtVenda.replace(" ", "T") + "Z");
+      nextCursor.setSeconds(nextCursor.getSeconds() + 1);
+      cursor = nextCursor;
+
+      await supabase.from("integrations").update({ last_synced_at: cursor.toISOString(), last_cursor: cursor.toISOString() }).eq("id", integration.id);
+
+      if (vendas.length < PAGE_SIZE_HINT) break; // lote menor que o teto — provavelmente é a última página
     }
 
-    if (failed > 0) {
-      errors.push(`${failed} venda(s) não gravada(s).`);
-    }
-
-    if (failed === 0) {
-      await supabase.from("integrations").update({ last_synced_at: new Date().toISOString(), last_cursor: new Date().toISOString() }).eq("id", integration.id);
+    if (totalFailed > 0) {
+      errors.push(`${totalFailed} venda(s) não gravada(s).`);
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro desconhecido";
