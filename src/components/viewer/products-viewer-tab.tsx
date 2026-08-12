@@ -12,7 +12,13 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { getViewerProductsSold, type ViewerData, type ViewerPeriodPreset } from "@/app/produtos-vendidos/actions";
+import {
+  getViewerProductsSold,
+  getViewerSalesByTerminal,
+  type ViewerData,
+  type ViewerPeriodPreset,
+  type ViewerTerminalSaleRow,
+} from "@/app/produtos-vendidos/actions";
 import { createClient } from "@/lib/supabase/client";
 import { matchesSearch } from "@/lib/text/normalize";
 import { classifySyncFreshness, SYNC_FRESHNESS_LABELS } from "@/lib/integrations/sync-status";
@@ -52,6 +58,7 @@ type ConnectionStatus = "connecting" | "live" | "polling" | "offline" | "error";
  * autorizada — o RLS garante que eventos de outras lojas nunca chegam aqui.
  */
 export function ProductsViewerTab() {
+  const [view, setView] = useState<"produtos" | "terminal">("produtos");
   const [period, setPeriod] = useState<ViewerPeriodPreset>("hoje");
   const [selectedStores, setSelectedStores] = useState<string[]>([]);
   const [search, setSearch] = useState("");
@@ -61,6 +68,8 @@ export function ProductsViewerTab() {
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
   const [lastFetchedAt, setLastFetchedAt] = useState<Date | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [terminalRows, setTerminalRows] = useState<ViewerTerminalSaleRow[] | null>(null);
+  const [terminalLoading, setTerminalLoading] = useState(false);
 
   const fetchingRef = useRef(false);
   const selectedStoresKey = selectedStores.join(",");
@@ -87,6 +96,28 @@ export function ProductsViewerTab() {
     const timer = setTimeout(refresh, 0);
     return () => clearTimeout(timer);
   }, [refresh]);
+
+  // Aba "Por terminal" busca sob demanda, só quando selecionada — evita
+  // carregar dado que a maioria dos acessos nunca vai ver.
+  useEffect(() => {
+    if (view !== "terminal") return;
+    let cancelled = false;
+    async function load() {
+      setTerminalLoading(true);
+      try {
+        const rows = await getViewerSalesByTerminal({ periodPreset: period, storeIds: selectedStores });
+        if (!cancelled) setTerminalRows(rows);
+      } finally {
+        if (!cancelled) setTerminalLoading(false);
+      }
+    }
+    const timer = setTimeout(load, 0);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, period, selectedStoresKey]);
 
   // Realtime: nada de polling contínuo — carrega uma vez, mantém uma
   // assinatura viva, e só refaz a consulta quando um evento real chega (ou
@@ -177,6 +208,12 @@ export function ProductsViewerTab() {
     return summaries.filter((s) => matchesSearch(s.productName, search));
   }, [data, search]);
 
+  const filteredTerminalRows = useMemo(() => {
+    const rows = terminalRows ?? [];
+    if (!search.trim()) return rows;
+    return rows.filter((r) => matchesSearch(r.productName, search));
+  }, [terminalRows, search]);
+
   const totalUnits = filteredSummaries.reduce((sum, s) => sum + s.quantity, 0);
   const hasMultipleStores = (data?.storeOptions.length ?? 0) > 1;
   const storeLabel =
@@ -203,6 +240,27 @@ export function ProductsViewerTab() {
         if (freshness === "atualizado") return null;
         return <p className="text-xs font-medium text-destructive">{SYNC_FRESHNESS_LABELS[freshness]}</p>;
       })()}
+
+      <div className="inline-flex items-center gap-1 rounded-lg border bg-muted p-1">
+        <button
+          type="button"
+          onClick={() => setView("produtos")}
+          className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+            view === "produtos" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          Produtos
+        </button>
+        <button
+          type="button"
+          onClick={() => setView("terminal")}
+          className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+            view === "terminal" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          Por terminal
+        </button>
+      </div>
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="inline-flex items-center gap-1 rounded-lg border bg-muted p-1">
@@ -262,11 +320,13 @@ export function ProductsViewerTab() {
         )}
       </div>
 
-      <p className="text-sm text-muted-foreground">
-        Total de unidades vendidas: <span className="font-semibold text-foreground tabular-nums">{totalUnits}</span>
-      </p>
+      {view === "produtos" && (
+        <p className="text-sm text-muted-foreground">
+          Total de unidades vendidas: <span className="font-semibold text-foreground tabular-nums">{totalUnits}</span>
+        </p>
+      )}
 
-      {loading && !data ? (
+      {view === "produtos" && (loading && !data ? (
         <div className="space-y-1">
           {Array.from({ length: 5 }).map((_, i) => (
             <Skeleton key={i} className="h-12 w-full" />
@@ -347,7 +407,43 @@ export function ProductsViewerTab() {
             );
           })}
         </div>
-      )}
+      ))}
+
+      {view === "terminal" &&
+        (terminalLoading && !terminalRows ? (
+          <div className="space-y-1">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-10 w-full" />
+            ))}
+          </div>
+        ) : filteredTerminalRows.length === 0 ? (
+          <Card>
+            <CardContent className="py-8 text-center text-sm text-muted-foreground">Nenhuma venda no período selecionado.</CardContent>
+          </Card>
+        ) : (
+          <div className="divide-y rounded-lg border">
+            <div className="flex items-center gap-2 bg-muted/40 px-2.5 py-2 text-xs font-medium text-muted-foreground">
+              <span className="flex-1">Produto</span>
+              <span className="w-14 text-right">Hora</span>
+              <span className="w-20 text-right">Terminal</span>
+            </div>
+            {filteredTerminalRows.map((row, i) => (
+              <div
+                key={`${row.orderedAt}-${row.productName}-${i}`}
+                className={`flex items-center gap-2 px-2.5 py-2.5 text-sm ${i % 2 === 1 ? "bg-muted/20" : "bg-card"}`}
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="line-clamp-2 font-medium">
+                    {row.quantity > 1 ? `${row.quantity}x ` : ""}
+                    {row.productName}
+                  </span>
+                </span>
+                <span className="w-14 shrink-0 text-right text-xs text-muted-foreground tabular-nums">{formatTime(row.orderedAt)}</span>
+                <span className="w-20 shrink-0 text-right text-xs text-muted-foreground tabular-nums">{row.terminal ?? "—"}</span>
+              </div>
+            ))}
+          </div>
+        ))}
     </div>
   );
 }

@@ -110,3 +110,65 @@ export async function getViewerProductsSold(filters: ViewerFilters): Promise<Vie
     lastDataReceivedAt,
   };
 }
+
+export interface ViewerTerminalSaleRow {
+  productName: string;
+  quantity: number;
+  orderedAt: string;
+  terminal: string | null;
+}
+
+/** Terminal/caixa que registrou a venda — só o Bar Fácil informa isso hoje
+ * (`codTerminal`/`codVendaTerminal` no payload bruto salvo em raw_payload).
+ * Outras origens não têm esse dado, então fica ausente. */
+function extractTerminal(sourcePlatform: string, rawPayload: Record<string, unknown> | null): string | null {
+  if (sourcePlatform !== "bar_facil" || !rawPayload) return null;
+  const terminal = rawPayload.codTerminal ?? rawPayload.codVendaTerminal;
+  return terminal !== undefined && terminal !== null ? String(terminal) : null;
+}
+
+interface ViewerTerminalOrderRow {
+  ordered_at: string;
+  source_platform: string;
+  raw_payload: Record<string, unknown> | null;
+  order_items: { original_name: string; quantity: number; is_addon: boolean }[];
+}
+
+/**
+ * Lista simples "Produto / Horário / Terminal" — sem valor, a pedido
+ * explícito da gerência. Uma linha por item de venda (não agregada por
+ * produto como a aba principal), pra deixar claro qual terminal vendeu
+ * cada item específico.
+ */
+export async function getViewerSalesByTerminal(filters: ViewerFilters): Promise<ViewerTerminalSaleRow[]> {
+  const supabase = await createClient();
+  const preset: PeriodPreset = filters.periodPreset;
+  const period = resolvePeriod(preset);
+
+  const { data: stores } = await supabase.from("stores").select("id").eq("is_active", true);
+  const authorizedStoreIds = (stores ?? []).map((s) => s.id);
+  const scopedStoreIds = filters.storeIds.length > 0 ? filters.storeIds.filter((id) => authorizedStoreIds.includes(id)) : authorizedStoreIds;
+  const fallback = ["00000000-0000-0000-0000-000000000000"];
+
+  const { data: orders } = await supabase
+    .from("orders")
+    .select("ordered_at, source_platform, raw_payload, order_items(original_name, quantity, is_addon)")
+    .in("store_id", scopedStoreIds.length ? scopedStoreIds : fallback)
+    .gte("ordered_at", period.start.toISOString())
+    .lte("ordered_at", period.end.toISOString())
+    .order("ordered_at", { ascending: false });
+
+  const rows = (orders ?? []) as unknown as ViewerTerminalOrderRow[];
+
+  return rows.flatMap((order) => {
+    const terminal = extractTerminal(order.source_platform, order.raw_payload);
+    return order.order_items
+      .filter((item) => !item.is_addon)
+      .map((item) => ({
+        productName: item.original_name,
+        quantity: item.quantity,
+        orderedAt: order.ordered_at,
+        terminal,
+      }));
+  });
+}
