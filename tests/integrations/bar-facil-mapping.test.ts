@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isBarFacilEstorno, toNormalizedBarFacilOrder } from "@/lib/integrations/bar-facil/mapping";
+import { isBarFacilEstorno, parseBarFacilDate, toNormalizedBarFacilOrder } from "@/lib/integrations/bar-facil/mapping";
 import type { BarFacilVenda } from "@/lib/integrations/bar-facil/types";
 
 function buildVenda(overrides: Partial<BarFacilVenda> = {}): BarFacilVenda {
@@ -52,6 +52,14 @@ describe("isBarFacilEstorno", () => {
       ],
     });
     expect(isBarFacilEstorno(venda)).toBe(true);
+  });
+});
+
+describe("parseBarFacilDate", () => {
+  it("interpreta dtVenda como horário LOCAL do estabelecimento, não UTC (bug confirmado ao vivo em 2026-08-12: tratar como UTC deslocava a venda em 3h)", () => {
+    const result = parseBarFacilDate("2026-08-12 17:34:24", "America/Sao_Paulo");
+    // 17:34:24 em America/Sao_Paulo (UTC-3, sem horário de verão) equivale a 20:34:24 UTC.
+    expect(new Date(result).toISOString()).toBe("2026-08-12T20:34:24.000Z");
   });
 });
 

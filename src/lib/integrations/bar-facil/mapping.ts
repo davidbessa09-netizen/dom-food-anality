@@ -1,3 +1,4 @@
+import { TZDate } from "@date-fns/tz";
 import type { NormalizedOrder, NormalizedOrderItem } from "@/lib/integrations/types";
 import type { BarFacilVenda } from "./types";
 
@@ -30,19 +31,17 @@ function mapItems(venda: BarFacilVenda): NormalizedOrderItem[] {
 
 /**
  * Bar Fácil não expõe fuso horário por evento na documentação recebida —
- * `dtVenda` vem sem offset ("yyyy-MM-dd HH:mm:ss"). Interpretamos como
- * horário local do evento (America/Sao_Paulo, ver [[BarFacilConfig.timezone]])
- * e convertemos para um ISO com offset explícito, nunca tratando como UTC.
+ * `dtVenda` vem sem offset ("yyyy-MM-dd HH:mm:ss"). Confirmado ao vivo em
+ * 2026-08-12 (comparando com o relógio real do estabelecimento): esse
+ * horário é o horário LOCAL do estabelecimento (America/Sao_Paulo por
+ * padrão, ver [[BarFacilConfig.timezone]]), não UTC — tratar como UTC
+ * direto (bug anterior) deslocava a venda em 3h e podia até jogar vendas
+ * de fim de dia pro dia errado nos filtros "Hoje"/"Ontem".
  */
 export function parseBarFacilDate(raw: string, timezone: string): string {
   const [datePart, timePart] = raw.split(" ");
   const isoLocal = `${datePart}T${timePart ?? "00:00:00"}`;
-  // Sem lib de timezone no runtime: assume-se que o servidor roda em UTC
-  // (padrão em ambientes serverless) e grava o horário local como veio,
-  // marcado com o fuso informado via metadata — a conversão de exibição
-  // (America/Sao_Paulo) já é feita em toda a camada de UI via APP_TIMEZONE.
-  void timezone;
-  return new Date(isoLocal).toISOString();
+  return new TZDate(isoLocal, timezone).toISOString();
 }
 
 export function toNormalizedBarFacilOrder(
