@@ -1,3 +1,4 @@
+import { TZDate } from "@date-fns/tz";
 import type { ConnectionStatus } from "@/lib/integrations/types";
 import {
   BAR_FACIL_BASE_URLS,
@@ -34,7 +35,8 @@ export class BarFacilAdapter {
 
   constructor(
     private readonly token: string,
-    private readonly environment: "producao" | "homologacao"
+    private readonly environment: "producao" | "homologacao",
+    private readonly timezone: string = "America/Sao_Paulo"
   ) {}
 
   private get baseUrl(): string {
@@ -127,8 +129,19 @@ export class BarFacilAdapter {
     return this.unwrapList<BarFacilVenda>(result);
   }
 
+  /**
+   * BUG CONFIRMADO AO VIVO EM 2026-08-12: `dtInicio`/`dtTermino` (assim como
+   * `dtVenda` na resposta) são interpretados pelo Bar Fácil como horário
+   * LOCAL do estabelecimento, não UTC. Formatar direto o Date em dígitos
+   * UTC (versão anterior) fazia a API reinterpretar esses dígitos como BRT,
+   * empurrando a janela de busca ~3h pra frente do instante real a cada
+   * consulta — pulando pra sempre qualquer venda nessa faixa de 3h, ciclo
+   * após ciclo (o checkpoint `last_synced_at` seguinte usa o "agora" real,
+   * então nunca revisita a janela perdida). Precisa converter pro horário
+   * de parede local antes de formatar, assim como [[parseBarFacilDate]].
+   */
   private formatDateTime(date: Date): string {
-    return date.toISOString().slice(0, 19).replace("T", " ");
+    return new TZDate(date, this.timezone).toISOString().slice(0, 19).replace("T", " ");
   }
 
   async queryValidacoes(eventoId: number): Promise<BarFacilValidacao[]> {

@@ -4,7 +4,7 @@ import { persistNormalizedOrder } from "@/lib/integrations/persist-order";
 import { computeSyncSince, computeReconciliationSince } from "@/lib/integrations/sync-window";
 import { broadcastSyncCompleted } from "@/lib/integrations/realtime-broadcast";
 import { BarFacilAdapter, BAR_FACIL_CONNECTOR_VERSION } from "./adapter";
-import { toNormalizedBarFacilOrder } from "./mapping";
+import { parseBarFacilDate, toNormalizedBarFacilOrder } from "./mapping";
 import type { BarFacilConfig } from "./config";
 
 export interface BarFacilSyncResult {
@@ -67,8 +67,8 @@ export async function syncBarFacilIntegration(
   }
 
   const config = (integration.config ?? {}) as BarFacilConfig;
-  const adapter = new BarFacilAdapter(token, config.environment ?? "producao");
   const timezone = config.timezone ?? "America/Sao_Paulo";
+  const adapter = new BarFacilAdapter(token, config.environment ?? "producao", timezone);
 
   const { data: links } = await supabase
     .from("barfacil_establishment_links")
@@ -164,7 +164,11 @@ export async function syncBarFacilIntegration(
       // aqui, deixa o próximo ciclo reprocessar a mesma página inteira.
       if (pageFailed > 0 || !maxDtVenda) break;
 
-      const nextCursor = new Date(maxDtVenda.replace(" ", "T") + "Z");
+      // maxDtVenda é horário LOCAL do estabelecimento (mesmo formato de
+      // dtVenda) — usa o mesmo parseBarFacilDate da normalização pra
+      // converter pro instante UTC real, em vez de tratar os dígitos como
+      // UTC direto (bug antigo, ver nota em BarFacilAdapter.formatDateTime).
+      const nextCursor = new Date(parseBarFacilDate(maxDtVenda, timezone));
       nextCursor.setSeconds(nextCursor.getSeconds() + 1);
       cursor = nextCursor;
 
