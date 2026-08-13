@@ -12,6 +12,7 @@ export interface BarFacilSyncResult {
   eventosProcessed: number;
   ordersProcessed: number;
   errors: string[];
+  debug?: string[];
 }
 
 /**
@@ -77,6 +78,7 @@ export async function syncBarFacilIntegration(
     .not("store_id", "is", null);
 
   const errors: string[] = [];
+  const debug: string[] = [`integration.last_synced_at (lido no início)=${integration.last_synced_at}`];
 
   if (!links || links.length === 0) {
     return { ok: false, eventosProcessed: 0, ordersProcessed: 0, errors: ["Nenhuma loja vinculada — cadastre o vínculo em Mapeamento de lojas."] };
@@ -109,6 +111,7 @@ export async function syncBarFacilIntegration(
     trigger === "reconciliation" ? computeReconciliationSince() : (computeSyncSince(integration.last_synced_at) ?? neverSyncedFallback);
   const until = new Date();
   let cursor = new Date(sinceIso);
+  debug.push(`sinceIso=${sinceIso} | cursor inicial=${cursor.toISOString()} | until=${until.toISOString()}`);
 
   let ordersProcessed = 0;
   let totalFailed = 0;
@@ -189,6 +192,7 @@ export async function syncBarFacilIntegration(
           errors.push(`Falha ao gravar checkpoint (página ${page}): ${cursorUpdateError.message}`);
           break;
         }
+        debug.push(`página ${page}: vendas=${vendas.length} maxDtVenda=${maxDtVenda} cursor gravado=${cursor.toISOString()}`);
       }
 
       if (vendas.length < PAGE_SIZE_HINT) {
@@ -230,7 +234,7 @@ export async function syncBarFacilIntegration(
     errors.push(message);
   }
 
-  return { ok: errors.length === 0, eventosProcessed: 1, ordersProcessed, errors };
+  return { ok: errors.length === 0, eventosProcessed: 1, ordersProcessed, errors, debug };
 }
 
 /** Um sales_channel por loja vinculada (platform='bar_facil') — igual ao
