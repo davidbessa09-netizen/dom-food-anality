@@ -135,7 +135,11 @@ export async function syncBarFacilIntegration(
 
   try {
     for (let page = 0; page < MAX_PAGES_PER_RUN; page++) {
+      debug.push(`página ${page}: enviando cursor=${cursor.toISOString()} until=${until.toISOString()}`);
       const vendas = await adapter.queryVendasPorPeriodo(cursor, until);
+      if (vendas.length > 0) {
+        debug.push(`página ${page}: recebido primeira=${vendas[0].dtVenda} (codVenda ${vendas[0].codVenda}) última=${vendas[vendas.length - 1].dtVenda} (codVenda ${vendas[vendas.length - 1].codVenda})`);
+      }
       if (vendas.length === 0) {
         // Nenhuma venda nova nessa janela — não é falha, é só um período
         // parado (ex.: fora do horário de funcionamento). Ainda assim
