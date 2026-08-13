@@ -12,7 +12,6 @@ export interface BarFacilSyncResult {
   eventosProcessed: number;
   ordersProcessed: number;
   errors: string[];
-  debug?: string[];
 }
 
 /**
@@ -78,7 +77,6 @@ export async function syncBarFacilIntegration(
     .not("store_id", "is", null);
 
   const errors: string[] = [];
-  const debug: string[] = [`integration.last_synced_at (lido no início)=${integration.last_synced_at}`];
 
   if (!links || links.length === 0) {
     return { ok: false, eventosProcessed: 0, ordersProcessed: 0, errors: ["Nenhuma loja vinculada — cadastre o vínculo em Mapeamento de lojas."] };
@@ -111,7 +109,6 @@ export async function syncBarFacilIntegration(
     trigger === "reconciliation" ? computeReconciliationSince() : (computeSyncSince(integration.last_synced_at) ?? neverSyncedFallback);
   const until = new Date();
   let cursor = new Date(sinceIso);
-  debug.push(`sinceIso=${sinceIso} | cursor inicial=${cursor.toISOString()} | until=${until.toISOString()}`);
 
   let ordersProcessed = 0;
   let totalFailed = 0;
@@ -135,13 +132,7 @@ export async function syncBarFacilIntegration(
 
   try {
     for (let page = 0; page < MAX_PAGES_PER_RUN; page++) {
-      debug.push(
-        `página ${page}: enviando cursor=${cursor.toISOString()} (dtInicio string real=${adapter.formatDateTime(cursor)}) until=${until.toISOString()}`
-      );
       const vendas = await adapter.queryVendasPorPeriodo(cursor, until);
-      if (vendas.length > 0) {
-        debug.push(`página ${page}: recebido primeira=${vendas[0].dtVenda} (codVenda ${vendas[0].codVenda}) última=${vendas[vendas.length - 1].dtVenda} (codVenda ${vendas[vendas.length - 1].codVenda})`);
-      }
       if (vendas.length === 0) {
         // Nenhuma venda nova nessa janela — não é falha, é só um período
         // parado (ex.: fora do horário de funcionamento). Ainda assim
@@ -177,9 +168,7 @@ export async function syncBarFacilIntegration(
       // dtVenda) — usa o mesmo parseBarFacilDate da normalização pra
       // converter pro instante UTC real, em vez de tratar os dígitos como
       // UTC direto (bug antigo, ver nota em BarFacilAdapter.formatDateTime).
-      const parsedMax = parseBarFacilDate(maxDtVenda, timezone);
-      const nextCursor = new Date(parsedMax);
-      debug.push(`página ${page}: parseBarFacilDate("${maxDtVenda}", "${timezone}")="${parsedMax}" -> new Date(...).toISOString()="${nextCursor.toISOString()}"`);
+      const nextCursor = new Date(parseBarFacilDate(maxDtVenda, timezone));
       nextCursor.setSeconds(nextCursor.getSeconds() + 1);
       cursor = nextCursor;
 
@@ -200,7 +189,6 @@ export async function syncBarFacilIntegration(
           errors.push(`Falha ao gravar checkpoint (página ${page}): ${cursorUpdateError.message}`);
           break;
         }
-        debug.push(`página ${page}: vendas=${vendas.length} maxDtVenda=${maxDtVenda} cursor gravado=${cursor.toISOString()}`);
       }
 
       if (vendas.length < PAGE_SIZE_HINT) {
@@ -242,7 +230,7 @@ export async function syncBarFacilIntegration(
     errors.push(message);
   }
 
-  return { ok: errors.length === 0, eventosProcessed: 1, ordersProcessed, errors, debug };
+  return { ok: errors.length === 0, eventosProcessed: 1, ordersProcessed, errors };
 }
 
 /** Um sales_channel por loja vinculada (platform='bar_facil') — igual ao

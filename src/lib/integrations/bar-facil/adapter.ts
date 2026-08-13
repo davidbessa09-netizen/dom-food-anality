@@ -149,9 +149,7 @@ export class BarFacilAdapter {
    * 2019, sempre -03:00) em vez de TZDate/Intl — ver [[parseBarFacilDate]]
    * em mapping.ts pra mais contexto.
    */
-  /** Exposto temporariamente pra debug (ver [[syncBarFacilIntegration]]) —
-   * remover junto com o restante da instrumentação de diagnóstico. */
-  formatDateTime(date: Date): string {
+  private formatDateTime(date: Date): string {
     if (this.timezone !== "America/Sao_Paulo") {
       throw new Error(`formatDateTime: fuso "${this.timezone}" não suportado — só America/Sao_Paulo (offset fixo -03:00) está implementado.`);
     }
