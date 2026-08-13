@@ -181,7 +181,14 @@ export async function syncBarFacilIntegration(
       // reconciliação que trava no meio empurra o cursor de volta pra
       // vários dias atrás, e isso se repete a cada execução noturna.
       if (trigger !== "reconciliation") {
-        await supabase.from("integrations").update({ last_synced_at: cursor.toISOString(), last_cursor: cursor.toISOString() }).eq("id", integration.id);
+        const { error: cursorUpdateError } = await supabase
+          .from("integrations")
+          .update({ last_synced_at: cursor.toISOString(), last_cursor: cursor.toISOString() })
+          .eq("id", integration.id);
+        if (cursorUpdateError) {
+          errors.push(`Falha ao gravar checkpoint (página ${page}): ${cursorUpdateError.message}`);
+          break;
+        }
       }
 
       if (vendas.length < PAGE_SIZE_HINT) {
@@ -198,7 +205,13 @@ export async function syncBarFacilIntegration(
     // frescor da UI (classifySyncFreshness) acha que parou de sincronizar
     // só porque não houve venda nova por um tempo.
     if (totalFailed === 0 && caughtUp) {
-      await supabase.from("integrations").update({ last_synced_at: until.toISOString(), last_cursor: until.toISOString() }).eq("id", integration.id);
+      const { error: finalUpdateError } = await supabase
+        .from("integrations")
+        .update({ last_synced_at: until.toISOString(), last_cursor: until.toISOString() })
+        .eq("id", integration.id);
+      if (finalUpdateError) {
+        errors.push(`Falha ao gravar checkpoint final: ${finalUpdateError.message}`);
+      }
     }
 
     // Avisa telas conectadas (Produtos vendidos, viewer restrito) sem
