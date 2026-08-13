@@ -105,8 +105,19 @@ export async function syncBarFacilIntegration(
   // senão uma venda de alguns dias atrás nunca seria buscada (a janela
   // incremental sempre avança pra frente a cada ciclo, mesmo vazio).
   const neverSyncedFallback = config.importStartDate ? new Date(config.importStartDate).toISOString() : new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  // Overlap de 60min (bem maior que o padrão de 10min da Anota AI) —
+  // confirmado ao vivo em 2026-08-13 que o Bar Fácil tem um atraso real
+  // entre `dtVenda` (quando a venda é registrada) e `dtConfirmado` (quando
+  // fica de fato disponível pra consulta em /vendas) de até ~22 minutos
+  // num caso observado. Com overlap curto, o cursor avança pra depois do
+  // dtVenda de uma venda que ainda não tinha sido confirmada, e ela nunca
+  // mais é revisitada (janela incremental só anda pra frente). Reprocessar
+  // uma janela maior não duplica nada — dedup por codVenda na persistência.
+  const BAR_FACIL_OVERLAP_MINUTES = 60;
   const sinceIso =
-    trigger === "reconciliation" ? computeReconciliationSince() : (computeSyncSince(integration.last_synced_at) ?? neverSyncedFallback);
+    trigger === "reconciliation"
+      ? computeReconciliationSince()
+      : (computeSyncSince(integration.last_synced_at, BAR_FACIL_OVERLAP_MINUTES) ?? neverSyncedFallback);
   const until = new Date();
   let cursor = new Date(sinceIso);
 
