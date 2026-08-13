@@ -5,6 +5,12 @@ import { syncBarFacilIntegration } from "@/lib/integrations/bar-facil/sync";
 import { tryAcquireSyncLock, releaseSyncLock } from "@/lib/integrations/sync-lock";
 import { computeReconciliationSince } from "@/lib/integrations/sync-window";
 
+// Limite padrão da Vercel (10s) é curto demais pra um backfill grande do
+// Bar Fácil (até 750 vendas/execução, cada uma com sua própria escrita no
+// banco) — confirmado ao vivo em 2026-08-13 que uma execução com backlog
+// acumulado estourava esse limite. 60s dá margem sem exigir plano maior.
+export const maxDuration = 60;
+
 type TriggerType = "scheduled" | "manual" | "retry" | "reconciliation";
 
 /**

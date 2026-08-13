@@ -172,7 +172,17 @@ export async function syncBarFacilIntegration(
       nextCursor.setSeconds(nextCursor.getSeconds() + 1);
       cursor = nextCursor;
 
-      await supabase.from("integrations").update({ last_synced_at: cursor.toISOString(), last_cursor: cursor.toISOString() }).eq("id", integration.id);
+      // A reconciliação sempre reparte de computeReconciliationSince() (7
+      // dias atrás) — se ela for interrompida no meio de uma página (ex.:
+      // timeout do serverless), esse checkpoint intermediário ainda é
+      // antigo (dentro da janela de 7 dias) e NUNCA deve sobrescrever
+      // last_synced_at/last_cursor, que são o cursor de avanço real usado
+      // pela sincronização normal. BUG CONFIRMADO: sem essa guarda, uma
+      // reconciliação que trava no meio empurra o cursor de volta pra
+      // vários dias atrás, e isso se repete a cada execução noturna.
+      if (trigger !== "reconciliation") {
+        await supabase.from("integrations").update({ last_synced_at: cursor.toISOString(), last_cursor: cursor.toISOString() }).eq("id", integration.id);
+      }
 
       if (vendas.length < PAGE_SIZE_HINT) {
         caughtUp = true;
