@@ -141,6 +141,7 @@ async function runSync(request: NextRequest, triggerType: TriggerType) {
       integrationsProcessed: results.length,
       results,
       barFacil: barFacilResult,
+      debugBuildSha: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Erro desconhecido";
