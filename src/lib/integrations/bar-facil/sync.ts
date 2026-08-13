@@ -177,7 +177,9 @@ export async function syncBarFacilIntegration(
       // dtVenda) — usa o mesmo parseBarFacilDate da normalização pra
       // converter pro instante UTC real, em vez de tratar os dígitos como
       // UTC direto (bug antigo, ver nota em BarFacilAdapter.formatDateTime).
-      const nextCursor = new Date(parseBarFacilDate(maxDtVenda, timezone));
+      const parsedMax = parseBarFacilDate(maxDtVenda, timezone);
+      const nextCursor = new Date(parsedMax);
+      debug.push(`página ${page}: parseBarFacilDate("${maxDtVenda}", "${timezone}")="${parsedMax}" -> new Date(...).toISOString()="${nextCursor.toISOString()}"`);
       nextCursor.setSeconds(nextCursor.getSeconds() + 1);
       cursor = nextCursor;
 
