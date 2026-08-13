@@ -1,4 +1,3 @@
-import { TZDate } from "@date-fns/tz";
 import type { ConnectionStatus } from "@/lib/integrations/types";
 import {
   BAR_FACIL_BASE_URLS,
@@ -14,6 +13,10 @@ import {
 } from "./types";
 
 export const BAR_FACIL_CONNECTOR_VERSION = "1.0.0";
+
+/** Ver nota em [[BarFacilAdapter.formatDateTime]] — offset fixo, sem
+ * depender de resolução de timezone pelo runtime. */
+const BAR_FACIL_FIXED_OFFSET_MINUTES = 180;
 
 /**
  * Cliente HTTP de baixo nível do Bar Fácil (BF Play / TicketMais) — cobre
@@ -133,17 +136,27 @@ export class BarFacilAdapter {
    * BUG CONFIRMADO AO VIVO EM 2026-08-12: `dtInicio`/`dtTermino` (assim como
    * `dtVenda` na resposta) são interpretados pelo Bar Fácil como horário
    * LOCAL do estabelecimento, não UTC. Formatar direto o Date em dígitos
-   * UTC (versão anterior) fazia a API reinterpretar esses dígitos como BRT,
+   * UTC (versão original) fazia a API reinterpretar esses dígitos como BRT,
    * empurrando a janela de busca ~3h pra frente do instante real a cada
    * consulta — pulando pra sempre qualquer venda nessa faixa de 3h, ciclo
-   * após ciclo (o checkpoint `last_synced_at` seguinte usa o "agora" real,
-   * então nunca revisita a janela perdida). Precisa converter pro horário
-   * de parede local antes de formatar, assim como [[parseBarFacilDate]].
+   * após ciclo.
+   *
+   * SEGUNDO BUG CONFIRMADO AO VIVO EM 2026-08-13: a versão com TZDate (que
+   * corrigia o bug acima) resolvia o fuso de forma diferente — e errada,
+   * equivalente a nenhum deslocamento — no runtime de produção da Vercel
+   * do que localmente, mesmo pacote/código. Por isso, aritmética manual de
+   * offset fixo (America/Sao_Paulo não observa horário de verão desde
+   * 2019, sempre -03:00) em vez de TZDate/Intl — ver [[parseBarFacilDate]]
+   * em mapping.ts pra mais contexto.
    */
   /** Exposto temporariamente pra debug (ver [[syncBarFacilIntegration]]) —
    * remover junto com o restante da instrumentação de diagnóstico. */
   formatDateTime(date: Date): string {
-    return new TZDate(date, this.timezone).toISOString().slice(0, 19).replace("T", " ");
+    if (this.timezone !== "America/Sao_Paulo") {
+      throw new Error(`formatDateTime: fuso "${this.timezone}" não suportado — só America/Sao_Paulo (offset fixo -03:00) está implementado.`);
+    }
+    const brtInstant = new Date(date.getTime() - BAR_FACIL_FIXED_OFFSET_MINUTES * 60_000);
+    return brtInstant.toISOString().slice(0, 19).replace("T", " ");
   }
 
   async queryValidacoes(eventoId: number): Promise<BarFacilValidacao[]> {

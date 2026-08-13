@@ -1,4 +1,3 @@
-import { TZDate } from "@date-fns/tz";
 import type { NormalizedOrder, NormalizedOrderItem } from "@/lib/integrations/types";
 import type { BarFacilVenda } from "./types";
 
@@ -29,6 +28,15 @@ function mapItems(venda: BarFacilVenda): NormalizedOrderItem[] {
   }));
 }
 
+/** America/Sao_Paulo não observa horário de verão desde 2019 — o offset é
+ * SEMPRE -03:00, fixo. Usamos aritmética manual em vez de TZDate/Intl:
+ * confirmado ao vivo em 2026-08-13 que TZDate resolve o fuso de forma
+ * DIFERENTE (e incorreta — equivalente a nenhum deslocamento) no runtime
+ * de produção da Vercel do que localmente, mesma versão do pacote,
+ * mesmo código — um risco de inconsistência entre ambientes que a
+ * aritmética fixa elimina de vez. */
+const BAR_FACIL_FIXED_OFFSET_MINUTES = 180;
+
 /**
  * Bar Fácil não expõe fuso horário por evento na documentação recebida —
  * `dtVenda` vem sem offset ("yyyy-MM-dd HH:mm:ss"). Confirmado ao vivo em
@@ -39,9 +47,16 @@ function mapItems(venda: BarFacilVenda): NormalizedOrderItem[] {
  * de fim de dia pro dia errado nos filtros "Hoje"/"Ontem".
  */
 export function parseBarFacilDate(raw: string, timezone: string): string {
+  if (timezone !== "America/Sao_Paulo") {
+    throw new Error(`parseBarFacilDate: fuso "${timezone}" não suportado — só America/Sao_Paulo (offset fixo -03:00) está implementado.`);
+  }
   const [datePart, timePart] = raw.split(" ");
-  const isoLocal = `${datePart}T${timePart ?? "00:00:00"}`;
-  return new TZDate(isoLocal, timezone).toISOString();
+  // Trata os dígitos como se já fossem UTC (sufixo Z) e depois soma o
+  // offset — equivale a "interpretar como horário local BRT e converter
+  // pra UTC", mas usando só aritmética de Date, sem depender de
+  // resolução de timezone pelo runtime.
+  const asIfUtc = new Date(`${datePart}T${timePart ?? "00:00:00"}Z`);
+  return new Date(asIfUtc.getTime() + BAR_FACIL_FIXED_OFFSET_MINUTES * 60_000).toISOString();
 }
 
 export function toNormalizedBarFacilOrder(
