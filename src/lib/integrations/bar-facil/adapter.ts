@@ -140,7 +140,9 @@ export class BarFacilAdapter {
    * então nunca revisita a janela perdida). Precisa converter pro horário
    * de parede local antes de formatar, assim como [[parseBarFacilDate]].
    */
-  private formatDateTime(date: Date): string {
+  /** Exposto temporariamente pra debug (ver [[syncBarFacilIntegration]]) —
+   * remover junto com o restante da instrumentação de diagnóstico. */
+  formatDateTime(date: Date): string {
     return new TZDate(date, this.timezone).toISOString().slice(0, 19).replace("T", " ");
   }
 
