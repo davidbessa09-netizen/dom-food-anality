@@ -455,6 +455,17 @@ async function TransactionsTab({
     return terminal !== undefined && terminal !== null ? String(terminal) : null;
   }
 
+  /** Pedidos de balcão/PDV na Anota AI (comanda) não têm telefone/e-mail no
+   * cliente — upsertCustomer nunca cria um registro só com nome (colidiria
+   * entre clientes diferentes), então customer_id fica null de propósito.
+   * Mas o número da comanda (`check`, no payload bruto) É uma identificação
+   * real do pedido — usamos como alternativa a "Não identificado" só
+   * quando não há cliente vinculado. */
+  function extractComanda(rawPayload: Record<string, unknown> | null): string | null {
+    const check = rawPayload?.check;
+    return typeof check === "number" || typeof check === "string" ? String(check) : null;
+  }
+
   const rows: TransactionRow[] = ((ordersRaw ?? []) as unknown as OrderRaw[]).map((o) => {
     const customer = Array.isArray(o.customers) ? o.customers[0] : o.customers;
     const store = storeById.get(o.store_id);
@@ -468,7 +479,7 @@ async function TransactionsTab({
       paymentLabel: formatPaymentMethod(o.payment_method),
       neighborhood: o.neighborhood_raw,
       terminal: extractTerminal(o.source_platform, o.raw_payload),
-      customerName: customer?.full_name ?? null,
+      customerName: customer?.full_name ?? (extractComanda(o.raw_payload) ? `Comanda ${extractComanda(o.raw_payload)}` : null),
       customerPhone: customer?.phone_masked ?? null,
       grossAmount: o.gross_amount,
       discountAmount: o.discount_amount,
