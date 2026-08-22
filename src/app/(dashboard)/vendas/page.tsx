@@ -455,15 +455,19 @@ async function TransactionsTab({
     return terminal !== undefined && terminal !== null ? String(terminal) : null;
   }
 
-  /** Pedidos de balcão/PDV na Anota AI (comanda) não têm telefone/e-mail no
-   * cliente — upsertCustomer nunca cria um registro só com nome (colidiria
-   * entre clientes diferentes), então customer_id fica null de propósito.
-   * Mas o número da comanda (`check`, no payload bruto) É uma identificação
-   * real do pedido — usamos como alternativa a "Não identificado" só
-   * quando não há cliente vinculado. */
+  /** Pedidos de balcão/comanda na Anota AI (garçom/PDV) não têm telefone —
+   * upsertCustomer nunca cria um registro só com nome (colidiria entre
+   * clientes diferentes), então customer_id fica null de propósito. Mas
+   * `raw_payload.customer.name` já traz uma identificação real do pedido
+   * nesses casos — pra pedidos do app do garçom, vem no formato "C22"/
+   * "C39" (código da comanda/mesa); pra PDV, o nome de quem operou o
+   * caixa. CONFIRMADO: `raw_payload.check` (tentativa anterior) NÃO é a
+   * comanda — é um contador interno que se repete até em pedidos de
+   * entrega do iFood, sem relação com mesa/comanda nenhuma. */
   function extractComanda(rawPayload: Record<string, unknown> | null): string | null {
-    const check = rawPayload?.check;
-    return typeof check === "number" || typeof check === "string" ? String(check) : null;
+    const customer = rawPayload?.customer as { name?: unknown } | undefined;
+    const name = customer?.name;
+    return typeof name === "string" && name.trim() ? name.trim() : null;
   }
 
   const rows: TransactionRow[] = ((ordersRaw ?? []) as unknown as OrderRaw[]).map((o) => {
@@ -479,7 +483,7 @@ async function TransactionsTab({
       paymentLabel: formatPaymentMethod(o.payment_method),
       neighborhood: o.neighborhood_raw,
       terminal: extractTerminal(o.source_platform, o.raw_payload),
-      customerName: customer?.full_name ?? (extractComanda(o.raw_payload) ? `Comanda ${extractComanda(o.raw_payload)}` : null),
+      customerName: customer?.full_name ?? extractComanda(o.raw_payload),
       customerPhone: customer?.phone_masked ?? null,
       grossAmount: o.gross_amount,
       discountAmount: o.discount_amount,
