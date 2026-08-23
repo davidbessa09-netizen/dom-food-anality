@@ -26,6 +26,8 @@ export interface TransactionRow {
   neighborhood: string | null;
   /** Terminal/caixa que registrou a venda — só o Bar Fácil informa isso hoje. */
   terminal: string | null;
+  /** Número do pedido gerado na origem — só a Anota AI informa isso hoje. */
+  orderNumber: string | null;
   customerName: string | null;
   customerPhone: string | null;
   grossAmount: number;
@@ -128,6 +130,12 @@ function OrderDetailDrawer({ row, open, onOpenChange }: { row: TransactionRow | 
                   <p className="font-medium">{row.terminal}</p>
                 </div>
               )}
+              {row.orderNumber && (
+                <div>
+                  <p className="text-xs text-muted-foreground">Nº do pedido</p>
+                  <p className="font-medium">{row.orderNumber}</p>
+                </div>
+              )}
               <div>
                 <p className="text-xs text-muted-foreground">Cliente</p>
                 <p className="font-medium">{row.customerName ?? "Não identificado"}</p>
@@ -187,6 +195,7 @@ export function TransactionsTable({ rows }: { rows: TransactionRow[] }) {
           <TableHeader>
             <TableRow>
               <TableHead className="w-24">Data</TableHead>
+              <TableHead className="w-20">Nº pedido</TableHead>
               <TableHead className="w-28">Loja</TableHead>
               <TableHead className="w-28">Cliente</TableHead>
               <TableHead>Produto(s)</TableHead>
@@ -200,6 +209,9 @@ export function TransactionsTable({ rows }: { rows: TransactionRow[] }) {
             {rows.map((row) => (
               <TableRow key={row.id}>
                 <TableCell className="truncate whitespace-nowrap text-xs">{formatDateCompact(row.orderedAt)}</TableCell>
+                <TableCell className="truncate text-xs" title={row.orderNumber ?? "—"}>
+                  {row.orderNumber ?? "—"}
+                </TableCell>
                 <TableCell className="truncate text-xs" title={row.storeName}>
                   {row.storeName}
                 </TableCell>
@@ -227,7 +239,7 @@ export function TransactionsTable({ rows }: { rows: TransactionRow[] }) {
             ))}
             {rows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-sm text-muted-foreground">
+                <TableCell colSpan={9} className="text-center text-sm text-muted-foreground">
                   Nenhum pedido encontrado para os filtros selecionados.
                 </TableCell>
               </TableRow>

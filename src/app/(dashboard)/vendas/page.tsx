@@ -455,19 +455,19 @@ async function TransactionsTab({
     return terminal !== undefined && terminal !== null ? String(terminal) : null;
   }
 
-  /** Pedidos de balcão/comanda na Anota AI (garçom/PDV) não têm telefone —
-   * upsertCustomer nunca cria um registro só com nome (colidiria entre
-   * clientes diferentes), então customer_id fica null de propósito. Mas
-   * `raw_payload.customer.name` já traz uma identificação real do pedido
-   * nesses casos — pra pedidos do app do garçom, vem no formato "C22"/
-   * "C39" (código da comanda/mesa); pra PDV, o nome de quem operou o
-   * caixa. CONFIRMADO: `raw_payload.check` (tentativa anterior) NÃO é a
-   * comanda — é um contador interno que se repete até em pedidos de
-   * entrega do iFood, sem relação com mesa/comanda nenhuma. */
-  function extractComanda(rawPayload: Record<string, unknown> | null): string | null {
-    const customer = rawPayload?.customer as { name?: unknown } | undefined;
-    const name = customer?.name;
-    return typeof name === "string" && name.trim() ? name.trim() : null;
+  /** Número do pedido gerado pela Anota AI (`raw_payload.shortReference`) —
+   * único por pedido (confirmado ao vivo), diferente de `raw_payload.check`
+   * (contador interno que se repete até entre pedidos de entrega, sem
+   * relação com o pedido) e de `raw_payload.customer.name` (nome de quem
+   * operou o caixa/comanda, também se repete entre pedidos diferentes).
+   * Mostrado sempre, em toda linha — não só quando falta cliente
+   * identificado (pedidos de balcão/comanda não têm telefone, então
+   * upsertCustomer nunca cria um registro só com nome). Outras origens
+   * (Bar Fácil, CSV) não têm esse campo, então fica ausente. */
+  function extractOrderNumber(sourcePlatform: string, rawPayload: Record<string, unknown> | null): string | null {
+    if (sourcePlatform !== "anota_ai") return null;
+    const shortReference = rawPayload?.shortReference;
+    return shortReference !== undefined && shortReference !== null ? String(shortReference) : null;
   }
 
   const rows: TransactionRow[] = ((ordersRaw ?? []) as unknown as OrderRaw[]).map((o) => {
@@ -483,7 +483,8 @@ async function TransactionsTab({
       paymentLabel: formatPaymentMethod(o.payment_method),
       neighborhood: o.neighborhood_raw,
       terminal: extractTerminal(o.source_platform, o.raw_payload),
-      customerName: customer?.full_name ?? extractComanda(o.raw_payload),
+      orderNumber: extractOrderNumber(o.source_platform, o.raw_payload),
+      customerName: customer?.full_name ?? null,
       customerPhone: customer?.phone_masked ?? null,
       grossAmount: o.gross_amount,
       discountAmount: o.discount_amount,
