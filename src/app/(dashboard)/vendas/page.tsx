@@ -374,16 +374,30 @@ async function TransactionsTab({
   const maxValue = typeof params.maxValue === "string" ? params.maxValue : undefined;
   const search = typeof params.q === "string" ? params.q : undefined;
 
-  // Amostra pra popular as opções de bairro/pagamento do filtro — não é a
-  // fonte da tabela em si, só evita listar valores que nunca ocorreram.
-  const { data: sampleRows } = await supabase
-    .from("orders")
-    .select("payment_method, neighborhood_raw")
-    .in("store_id", storeFallback)
-    .gte("ordered_at", periodStart)
-    .lte("ordered_at", periodEnd)
-    .order("ordered_at", { ascending: false })
-    .limit(FILTER_OPTIONS_SAMPLE);
+  // Amostra pra popular as opções de bairro/pagamento do filtro (não é a
+  // fonte da tabela em si) e a busca por cliente (resolve os ids que
+  // batem no nome primeiro, em vez de filtrar via join aninhado — o
+  // PostgREST só filtra recurso embutido com `!inner`, o que excluiria
+  // pedidos sem cliente vinculado) são independentes uma da outra —
+  // rodam em paralelo em vez de sequencial pra não somar a latência das
+  // duas no tempo de carregamento da página.
+  const [{ data: sampleRows }, matchedCustomers] = await Promise.all([
+    supabase
+      .from("orders")
+      .select("payment_method, neighborhood_raw")
+      .in("store_id", storeFallback)
+      .gte("ordered_at", periodStart)
+      .lte("ordered_at", periodEnd)
+      .order("ordered_at", { ascending: false })
+      .limit(FILTER_OPTIONS_SAMPLE),
+    search
+      ? supabase
+          .from("customers")
+          .select("id")
+          .in("organization_id", orgIds.length ? orgIds : ["00000000-0000-0000-0000-000000000000"])
+          .ilike("full_name", `%${search}%`)
+      : Promise.resolve({ data: null }),
+  ]);
 
   const paymentOptions = [...new Set((sampleRows ?? []).map((r) => r.payment_method).filter((v): v is string => !!v))]
     .map((v) => ({ value: v, label: formatPaymentMethod(v) }))
@@ -392,24 +406,19 @@ async function TransactionsTab({
     .sort()
     .map((v) => ({ value: v, label: v }));
 
-  // Busca por cliente: resolve os ids que batem no nome primeiro, em vez de
-  // filtrar via join aninhado (PostgREST só filtra recurso embutido com
-  // `!inner`, o que excluiria pedidos sem cliente vinculado).
-  let searchCustomerIds: string[] | null = null;
-  if (search) {
-    const { data: matchedCustomers } = await supabase
-      .from("customers")
-      .select("id")
-      .in("organization_id", orgIds.length ? orgIds : ["00000000-0000-0000-0000-000000000000"])
-      .ilike("full_name", `%${search}%`);
-    searchCustomerIds = (matchedCustomers ?? []).map((c) => c.id);
-  }
+  const searchCustomerIds: string[] | null = search ? (matchedCustomers.data ?? []).map((c) => c.id) : null;
 
+  // count "planned" (estimativa via plano de execução) em vez de "exact" —
+  // com a tabela orders já em milhares de linhas, contar exatamente TODAS
+  // as linhas que batem com o filtro (não só a página atual) a cada
+  // carregamento da tela ficava perceptivelmente lento e só piora
+  // conforme mais pedidos entram. A estimativa é suficiente pra paginação
+  // (não precisa ser um número exato pro usuário).
   let query = supabase
     .from("orders")
     .select(
       "id, store_id, ordered_at, status, fulfillment_type, source_platform, payment_method, neighborhood_raw, gross_amount, discount_amount, delivery_fee_amount, net_amount, raw_payload, customers(full_name, phone_masked), order_items(original_name, quantity, is_addon, total_price)",
-      { count: "exact" }
+      { count: "planned" }
     )
     .in("store_id", storeFallback)
     .gte("ordered_at", periodStart)
