@@ -1,10 +1,9 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { isViewerOnlyRoles } from "@/lib/auth/username";
+import { getViewerAllowedPath, isViewerOnlyRoles } from "@/lib/auth/username";
 import type { UserRole } from "@/types/database";
 
 const PUBLIC_PATHS = ["/login", "/recuperar-senha", "/onboarding"];
-const VIEWER_ALLOWED_PATH = "/produtos-vendidos";
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
@@ -46,12 +45,13 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // Bloqueio real de rota pro perfil "Visualizador de produtos" — não
-  // basta esconder o menu, a barreira de verdade é aqui (roda em TODO
-  // request, inclusive digitando a URL direto) e no RLS do banco. Um
-  // usuário com QUALQUER outro papel além de products_viewer não é
-  // restrito por esta regra (ex.: admin também vinculado como viewer em
-  // outra loja continua vendo tudo que seu outro papel permite).
+  // Bloqueio real de rota pros perfis "viewer-only" (Visualizador de
+  // produtos, Visualizador de vendas) — não basta esconder o menu, a
+  // barreira de verdade é aqui (roda em TODO request, inclusive digitando
+  // a URL direto) e no RLS do banco. Um usuário com QUALQUER outro papel
+  // além de um viewer-only não é restrito por esta regra (ex.: admin
+  // também vinculado como viewer em outra loja continua vendo tudo que
+  // seu outro papel permite).
   if (user && !isPublic && !isApiRoute) {
     const { data: memberships } = await supabase.from("user_organizations").select("role").eq("user_id", user.id);
     const roles = (memberships ?? []).map((m) => m.role as UserRole);
@@ -69,13 +69,14 @@ export async function updateSession(request: NextRequest) {
         url.pathname = "/login";
         return NextResponse.redirect(url);
       }
-    }
 
-    if (viewerOnly && !path.startsWith(VIEWER_ALLOWED_PATH)) {
-      const url = request.nextUrl.clone();
-      url.pathname = VIEWER_ALLOWED_PATH;
-      url.searchParams.set("blocked", "1");
-      return NextResponse.redirect(url);
+      const allowedPath = getViewerAllowedPath(roles);
+      if (!path.startsWith(allowedPath)) {
+        const url = request.nextUrl.clone();
+        url.pathname = allowedPath;
+        url.searchParams.set("blocked", "1");
+        return NextResponse.redirect(url);
+      }
     }
   }
 

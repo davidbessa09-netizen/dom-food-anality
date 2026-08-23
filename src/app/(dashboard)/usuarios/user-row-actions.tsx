@@ -27,12 +27,18 @@ export function ViewerUserActions({
   stores,
   currentStoreNames,
   allStores,
+  canEditStores = true,
 }: {
   userId: string;
   status: "ativo" | "inativo";
   stores: StoreOption[];
   currentStoreNames: string[];
   allStores: boolean;
+  /** Visualizador de vendas é sempre organização inteira (sem escopo por
+   * loja, ver migration 0020) — esconde "Editar lojas" pra esse papel, já
+   * que updateViewerStores grava role='products_viewer' e concederia um
+   * segundo papel indevido a esse usuário. */
+  canEditStores?: boolean;
 }) {
   const [editOpen, setEditOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
@@ -93,7 +99,7 @@ export function ViewerUserActions({
           <MoreHorizontal className="size-4" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={() => setEditOpen(true)}>Editar lojas</DropdownMenuItem>
+          {canEditStores && <DropdownMenuItem onClick={() => setEditOpen(true)}>Editar lojas</DropdownMenuItem>}
           <DropdownMenuItem onClick={() => setResetOpen(true)}>Redefinir senha</DropdownMenuItem>
           <DropdownMenuItem onClick={handleToggleStatus}>{status === "ativo" ? "Bloquear agora" : "Ativar"}</DropdownMenuItem>
           <DropdownMenuSeparator />

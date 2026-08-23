@@ -13,7 +13,7 @@ create extension if not exists "pg_trgm"; -- para similaridade de nomes de produ
 -- ---------------------------------------------------------------------
 -- ENUMS
 -- ---------------------------------------------------------------------
-create type user_role as enum ('admin_geral','gestor_marca','gestor_loja','analista','somente_leitura','products_viewer');
+create type user_role as enum ('admin_geral','gestor_marca','gestor_loja','analista','somente_leitura','products_viewer','vendas_viewer');
 create type platform_type as enum ('anota_ai','ifood','csv_import','event_tracking','bar_facil');
 create type sync_status as enum ('pending','running','success','partial_success','failed');
 create type order_status as enum ('criado','confirmado','em_preparo','saiu_para_entrega','concluido','cancelado');
@@ -540,10 +540,12 @@ create index trgm_neighborhood_alias on neighborhood_aliases using gin (raw_valu
 -- =====================================================================
 
 -- Função auxiliar: o usuário logado tem acesso a esta loja?
--- Nota: estas 3 funções excluem explicitamente o papel products_viewer
--- (Visualizador de produtos) — esse papel fica bloqueado de tudo que
--- depende delas (praticamente todas as tabelas exceto as 6 abaixo), e só
--- recebe acesso via user_has_products_viewer_*_access (ver adiante).
+-- Nota: estas 3 funções excluem explicitamente os papéis products_viewer
+-- (Visualizador de produtos) e vendas_viewer (Visualizador de vendas) —
+-- esses papéis ficam bloqueados de tudo que depende delas (praticamente
+-- todas as tabelas exceto as poucas abaixo), e só recebem acesso via
+-- user_has_products_viewer_*_access / user_has_vendas_viewer_*_access
+-- (ver adiante).
 create or replace function public.user_has_store_access(target_store_id uuid)
 returns boolean
 language sql
@@ -556,7 +558,7 @@ as $$
     join stores s on s.id = target_store_id
     join brands b on b.id = s.brand_id
     where uo.user_id = auth.uid()
-      and uo.role <> 'products_viewer'
+      and uo.role not in ('products_viewer', 'vendas_viewer')
       and uo.organization_id = b.organization_id
       and (uo.brand_id is null or uo.brand_id = b.id)
       and (uo.store_id is null or uo.store_id = s.id)
@@ -574,7 +576,7 @@ as $$
     from user_organizations uo
     join brands b on b.id = target_brand_id
     where uo.user_id = auth.uid()
-      and uo.role <> 'products_viewer'
+      and uo.role not in ('products_viewer', 'vendas_viewer')
       and uo.organization_id = b.organization_id
       and (uo.brand_id is null or uo.brand_id = b.id)
   );
@@ -590,11 +592,11 @@ as $$
     select 1 from user_organizations uo
     where uo.user_id = auth.uid()
       and uo.organization_id = target_org_id
-      and uo.role <> 'products_viewer'
+      and uo.role not in ('products_viewer', 'vendas_viewer')
   );
 $$;
 
--- Acesso EXPLÍCITO e restrito do Visualizador de produtos — usado só nas 6
+-- Acesso EXPLÍCITO e restrito do Visualizador de produtos — usado só nas
 -- policies de select que "Produtos vendidos" precisa (ver mais abaixo).
 create or replace function public.user_has_products_viewer_store_access(target_store_id uuid)
 returns boolean
@@ -632,6 +634,57 @@ as $$
   );
 $$;
 
+-- Acesso EXPLÍCITO e restrito do Visualizador de vendas — sempre
+-- organização inteira, nunca escopado por marca/loja (diferente do
+-- Visualizador de produtos) — usado só nas policies que a tela Vendas
+-- precisa (stores, orders, order_items, brands, customers).
+create or replace function public.user_has_vendas_viewer_store_access(target_store_id uuid)
+returns boolean
+language sql
+security definer
+stable
+as $$
+  select exists (
+    select 1
+    from user_organizations uo
+    join stores s on s.id = target_store_id
+    join brands b on b.id = s.brand_id
+    where uo.user_id = auth.uid()
+      and uo.role = 'vendas_viewer'
+      and uo.organization_id = b.organization_id
+  );
+$$;
+
+create or replace function public.user_has_vendas_viewer_brand_access(target_brand_id uuid)
+returns boolean
+language sql
+security definer
+stable
+as $$
+  select exists (
+    select 1
+    from user_organizations uo
+    join brands b on b.id = target_brand_id
+    where uo.user_id = auth.uid()
+      and uo.role = 'vendas_viewer'
+      and uo.organization_id = b.organization_id
+  );
+$$;
+
+create or replace function public.user_has_vendas_viewer_org_access(target_org_id uuid)
+returns boolean
+language sql
+security definer
+stable
+as $$
+  select exists (
+    select 1 from user_organizations uo
+    where uo.user_id = auth.uid()
+      and uo.role = 'vendas_viewer'
+      and uo.organization_id = target_org_id
+  );
+$$;
+
 alter table organizations enable row level security;
 alter table brands enable row level security;
 alter table stores enable row level security;
@@ -655,10 +708,14 @@ create policy org_select on organizations for select
   using (public.user_has_org_access(id));
 
 create policy brand_select on brands for select
-  using (public.user_has_brand_access(id));
+  using (public.user_has_brand_access(id) or public.user_has_vendas_viewer_brand_access(id));
 
 create policy store_select on stores for select
-  using (public.user_has_store_access(id) or public.user_has_products_viewer_store_access(id));
+  using (
+    public.user_has_store_access(id)
+    or public.user_has_products_viewer_store_access(id)
+    or public.user_has_vendas_viewer_store_access(id)
+  );
 
 create policy sales_channel_select on sales_channels for select
   using (public.user_has_store_access(store_id) or public.user_has_products_viewer_store_access(store_id));
@@ -667,12 +724,20 @@ create policy user_org_select on user_organizations for select
   using (user_id = auth.uid() or public.user_has_org_access(organization_id));
 
 create policy orders_select on orders for select
-  using (public.user_has_store_access(store_id) or public.user_has_products_viewer_store_access(store_id));
+  using (
+    public.user_has_store_access(store_id)
+    or public.user_has_products_viewer_store_access(store_id)
+    or public.user_has_vendas_viewer_store_access(store_id)
+  );
 
 create policy order_items_select on order_items for select
   using (exists (
     select 1 from orders o where o.id = order_items.order_id
-      and (public.user_has_store_access(o.store_id) or public.user_has_products_viewer_store_access(o.store_id))
+      and (
+        public.user_has_store_access(o.store_id)
+        or public.user_has_products_viewer_store_access(o.store_id)
+        or public.user_has_vendas_viewer_store_access(o.store_id)
+      )
   ));
 
 create policy products_select on products for select
@@ -688,7 +753,7 @@ create policy categories_select on categories for select
   using (public.user_has_brand_access(brand_id));
 
 create policy customers_select on customers for select
-  using (public.user_has_org_access(organization_id));
+  using (public.user_has_org_access(organization_id) or public.user_has_vendas_viewer_org_access(organization_id));
 
 create policy daily_metrics_select on daily_metrics for select
   using (public.user_has_store_access(store_id));

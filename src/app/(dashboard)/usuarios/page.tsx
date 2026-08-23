@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/auth/session";
-import { listProductsViewerUsers } from "./actions";
+import { listProductsViewerUsers, listVendasViewerUsers } from "./actions";
 import { NewAccessButton } from "./user-form";
 import { ViewerUsersTable } from "./viewer-users-table";
 
@@ -14,6 +14,7 @@ const ROLE_LABELS: Record<string, string> = {
   analista: "Analista",
   somente_leitura: "Somente leitura",
   products_viewer: "Visualizador de produtos",
+  vendas_viewer: "Visualizador de vendas",
 };
 
 export default async function UsersPage() {
@@ -27,7 +28,7 @@ export default async function UsersPage() {
     .from("user_organizations")
     .select("id, user_id, role, brand_id, store_id, organization_id")
     .in("organization_id", orgIds.length ? orgIds : ["00000000-0000-0000-0000-000000000000"])
-    .neq("role", "products_viewer");
+    .not("role", "in", "(products_viewer,vendas_viewer)");
 
   let stores: { id: string; name: string }[] = [];
   if (isAdmin) {
@@ -38,6 +39,7 @@ export default async function UsersPage() {
   }
 
   const viewerUsers = isAdmin ? await listProductsViewerUsers() : [];
+  const vendasViewerUsers = isAdmin ? await listVendasViewerUsers() : [];
 
   return (
     <div className="space-y-4">
@@ -57,6 +59,20 @@ export default async function UsersPage() {
           </CardHeader>
           <CardContent>
             <ViewerUsersTable users={viewerUsers} stores={stores} />
+          </CardContent>
+        </Card>
+      )}
+
+      {isAdmin && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Visualizador de vendas</CardTitle>
+            <CardDescription>
+              Acesso restrito só à aba Vendas (análise agregada + transações), sempre organização inteira — sem e-mail, login por nome de usuário.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ViewerUsersTable users={vendasViewerUsers} stores={[]} canEditStores={false} />
           </CardContent>
         </Card>
       )}

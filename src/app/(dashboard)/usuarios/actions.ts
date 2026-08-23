@@ -39,8 +39,8 @@ export interface CreateProductsViewerInput {
   displayName: string;
   username: string;
   password: string;
-  role: "products_viewer" | "admin_geral";
-  storeIds: string[]; // vazio = todas as lojas da organização (ignorado pra admin_geral)
+  role: "products_viewer" | "vendas_viewer" | "admin_geral";
+  storeIds: string[]; // vazio = todas as lojas da organização (ignorado pra vendas_viewer/admin_geral)
   mustChangePassword: boolean;
   expiresAt: string | null;
   note: string | null;
@@ -49,10 +49,11 @@ export interface CreateProductsViewerInput {
 /**
  * Cria um usuário SEM e-mail na interface (e-mail sintético interno só pro
  * Supabase Auth aceitar) — perfil "Visualizador de produtos" (restrito por
- * loja) ou "Administrador geral" (acesso completo, aviso obrigatório na UI
- * antes de salvar). Usa a service role (bypassa RLS) porque criar usuário
- * em auth.users exige privilégio administrativo que o cliente autenticado
- * normal não tem.
+ * loja), "Visualizador de vendas" (sempre organização inteira, sem escopo
+ * por loja) ou "Administrador geral" (acesso completo, aviso obrigatório na
+ * UI antes de salvar). Usa a service role (bypassa RLS) porque criar
+ * usuário em auth.users exige privilégio administrativo que o cliente
+ * autenticado normal não tem.
  */
 export async function createProductsViewerUser(input: CreateProductsViewerInput): Promise<ActionResult> {
   const admin = await requireAdmin();
@@ -110,6 +111,25 @@ export async function createProductsViewerUser(input: CreateProductsViewerInput)
       return { ok: false, error: "Falha ao conceder o acesso administrativo." };
     }
     await logAudit(admin.organizationId, admin.userId, "user_created", newUserId, { username, role: "admin_geral" });
+    revalidatePath("/usuarios");
+    return { ok: true };
+  }
+
+  if (input.role === "vendas_viewer") {
+    // Sempre organização inteira — este papel não tem escopo por loja (ver
+    // migration 0020_vendas_viewer_access.sql).
+    const { error: vendasLinkError } = await service.from("user_organizations").insert({
+      user_id: newUserId,
+      organization_id: admin.organizationId,
+      role: "vendas_viewer" as UserRole,
+      brand_id: null,
+      store_id: null,
+    });
+    if (vendasLinkError) {
+      await service.auth.admin.deleteUser(newUserId);
+      return { ok: false, error: "Falha ao conceder o acesso de Vendas." };
+    }
+    await logAudit(admin.organizationId, admin.userId, "user_created", newUserId, { username, role: "vendas_viewer" });
     revalidatePath("/usuarios");
     return { ok: true };
   }
@@ -228,6 +248,14 @@ export interface ViewerUserRow {
 }
 
 export async function listProductsViewerUsers(): Promise<ViewerUserRow[]> {
+  return listViewerUsersByRole("products_viewer");
+}
+
+export async function listVendasViewerUsers(): Promise<ViewerUserRow[]> {
+  return listViewerUsersByRole("vendas_viewer");
+}
+
+async function listViewerUsersByRole(role: "products_viewer" | "vendas_viewer"): Promise<ViewerUserRow[]> {
   const admin = await requireAdmin();
   if (!admin) return [];
 
@@ -236,7 +264,7 @@ export async function listProductsViewerUsers(): Promise<ViewerUserRow[]> {
     .from("user_organizations")
     .select("user_id, store_id, stores(name)")
     .eq("organization_id", admin.organizationId)
-    .eq("role", "products_viewer");
+    .eq("role", role);
 
   const service = createServiceClient();
   const userIds = [...new Set((memberships ?? []).map((m) => m.user_id))];

@@ -18,7 +18,13 @@ interface StoreOption {
   name: string;
 }
 
-type AccessRole = "products_viewer" | "admin_geral";
+type AccessRole = "products_viewer" | "vendas_viewer" | "admin_geral";
+
+const ROLE_LABELS: Record<AccessRole, string> = {
+  products_viewer: "Visualizador de produtos",
+  vendas_viewer: "Visualizador de vendas",
+  admin_geral: "Administrador geral",
+};
 
 export function NewAccessButton({ stores }: { stores: StoreOption[] }) {
   const [open, setOpen] = useState(false);
@@ -142,21 +148,30 @@ export function NewAccessButton({ stores }: { stores: StoreOption[] }) {
               <Label>Perfil de acesso</Label>
               <Select value={role} onValueChange={(v) => setRole(v as AccessRole)}>
                 <SelectTrigger className="w-full">
-                  <SelectValue>{() => (role === "products_viewer" ? "Visualizador de produtos" : "Administrador geral")}</SelectValue>
+                  <SelectValue>{() => ROLE_LABELS[role]}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="products_viewer">Visualizador de produtos</SelectItem>
+                  <SelectItem value="vendas_viewer">Visualizador de vendas</SelectItem>
                   <SelectItem value="admin_geral">Administrador geral</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
-            {role === "admin_geral" ? (
+            {role === "admin_geral" && (
               <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-2.5 text-xs">
                 <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-warning" />
                 <span>Este usuário terá acesso administrativo completo — todas as páginas, todas as lojas, e poderá gerenciar outros usuários.</span>
               </div>
-            ) : (
+            )}
+
+            {role === "vendas_viewer" && (
+              <div className="rounded-md border bg-muted/40 p-2.5 text-xs text-muted-foreground">
+                Este acesso vê só a aba Vendas (análise + transações) — sempre da organização inteira, sem escopo por loja.
+              </div>
+            )}
+
+            {role === "products_viewer" && (
               <div className="space-y-1.5">
                 <Label>Lojas permitidas</Label>
                 <label className="flex items-center gap-2 rounded-md border p-2">

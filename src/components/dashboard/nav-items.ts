@@ -81,10 +81,16 @@ const ALL_NAV_GROUPS: NavGroup[] = [
   },
 ];
 
-/** UX only — esconde o grupo Administração de quem não é admin_geral.
- * Nunca é a barreira de segurança real: RLS e as checagens de role no
- * servidor continuam sendo a proteção de verdade (ver SECURITY.md). */
-export function getVisibleNavGroups(isAdmin: boolean): NavGroup[] {
+/** UX only — esconde o grupo Administração de quem não é admin_geral, e
+ * reduz o menu inteiro a só "Vendas" pro Visualizador de vendas (papel
+ * viewer-only, ver middleware). Nunca é a barreira de segurança real:
+ * RLS e as checagens de role no servidor continuam sendo a proteção de
+ * verdade (ver SECURITY.md) — o middleware já bloqueia qualquer outra
+ * rota mesmo que este filtro de UI falhe ou seja contornado. */
+export function getVisibleNavGroups(isAdmin: boolean, vendasViewerOnly = false): NavGroup[] {
+  if (vendasViewerOnly) {
+    return [{ label: "Vendas", items: [{ href: "/vendas", label: "Vendas", icon: ShoppingCart }] }];
+  }
   if (isAdmin) return ALL_NAV_GROUPS;
   return ALL_NAV_GROUPS.filter((g) => g.label !== "Administração");
 }

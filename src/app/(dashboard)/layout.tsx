@@ -5,6 +5,8 @@ import { createClient } from "@/lib/supabase/server";
 import { SidebarNav } from "@/components/dashboard/sidebar-nav";
 import { Topbar } from "@/components/dashboard/topbar";
 import { buildSyncAlerts, type IntegrationHealthInput, type RecentSyncJobInput } from "@/lib/metrics/alerts";
+import { isViewerOnlyRoles } from "@/lib/auth/username";
+import type { UserRole } from "@/types/database";
 
 interface IntegrationRow {
   id: string;
@@ -29,6 +31,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
   }
 
   const isAdmin = user.memberships.some((m) => m.role === "admin_geral");
+  // Visualizador de vendas (viewer-only, ver middleware): menu reduzido a
+  // só "Vendas" — UX apenas, o middleware/RLS já bloqueiam de verdade
+  // qualquer outra rota/dado mesmo que este cálculo falhe.
+  const vendasViewerOnly = isViewerOnlyRoles(user.memberships.map((m) => m.role as UserRole)) && user.memberships[0]?.role === "vendas_viewer";
 
   let organizations: { id: string; name: string }[] = [];
   let lastSyncedAt: string | null = null;
@@ -102,6 +108,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         email={user.email ?? "—"}
         role={user.memberships[0]?.role}
         isAdmin={isAdmin}
+        vendasViewerOnly={vendasViewerOnly}
       />
       <div className="flex flex-1 flex-col overflow-hidden">
         <Topbar
@@ -111,6 +118,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           organizations={organizations}
           lastSyncedAt={lastSyncedAt}
           alertsCount={alertsCount}
+          vendasViewerOnly={vendasViewerOnly}
         />
         <main className="flex-1 overflow-y-auto bg-muted/20 p-4 md:p-6">{children}</main>
       </div>

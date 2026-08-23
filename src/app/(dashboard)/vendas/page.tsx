@@ -28,7 +28,8 @@ import { revenueByChannel, revenueByPaymentMethod } from "@/lib/metrics/sales-br
 import { formatPaymentMethod } from "@/lib/format/payment-method";
 import { CHANNEL_OPTIONS, FULFILLMENT_OPTIONS, ORDER_STATUS_OPTIONS } from "@/lib/filters/types";
 import { Percent, Receipt, ShoppingCart, Truck, Wallet } from "lucide-react";
-import type { Brand, Store } from "@/types/database";
+import type { Brand, Store, UserRole } from "@/types/database";
+import { isViewerOnlyRoles } from "@/lib/auth/username";
 
 const TRANSACTIONS_PAGE_SIZE = 25;
 const FILTER_OPTIONS_SAMPLE = 2000;
@@ -55,10 +56,17 @@ export default async function SalesPage({
   const { period, periodPreset: preset, customFrom, customTo } = filters;
   const selectedBrandId = filters.brandId;
   const previous = previousPeriod(period);
-  const tab = typeof params.tab === "string" && params.tab === "transacoes" ? "transacoes" : "analise";
 
   const user = await getCurrentUser();
   const supabase = await createClient();
+
+  // Visualizador de vendas (RH) só pode ver Transações — nunca a análise
+  // agregada. Força a aba independente do que vier na URL (não é só
+  // esconder o botão: sem isso, alguém digitando ?tab=analise veria os
+  // números agregados mesmo com o link do menu escondido).
+  const vendasViewerOnly =
+    isViewerOnlyRoles((user?.memberships ?? []).map((m) => m.role as UserRole)) && user?.memberships[0]?.role === "vendas_viewer";
+  const tab = vendasViewerOnly ? "transacoes" : typeof params.tab === "string" && params.tab === "transacoes" ? "transacoes" : "analise";
 
   const orgIds = [...new Set((user?.memberships ?? []).map((m) => m.organization_id))];
   const fallback = ["00000000-0000-0000-0000-000000000000"];
@@ -102,14 +110,16 @@ export default async function SalesPage({
             detalhada de pedidos vive aqui, não no dashboard.
           </p>
         </div>
-        <PageTabs
-          tabs={[
-            { value: "analise", label: "Análise" },
-            { value: "transacoes", label: "Transações" },
-          ]}
-          current={tab}
-          buildHref={buildHref}
-        />
+        {!vendasViewerOnly && (
+          <PageTabs
+            tabs={[
+              { value: "analise", label: "Análise" },
+              { value: "transacoes", label: "Transações" },
+            ]}
+            current={tab}
+            buildHref={buildHref}
+          />
+        )}
       </div>
 
       <GlobalFilterBar
@@ -373,6 +383,7 @@ async function TransactionsTab({
   const minValue = typeof params.minValue === "string" ? params.minValue : undefined;
   const maxValue = typeof params.maxValue === "string" ? params.maxValue : undefined;
   const search = typeof params.q === "string" ? params.q : undefined;
+  const orderNumberSearch = typeof params.orderNumber === "string" ? params.orderNumber.trim() : undefined;
 
   // Amostra pra popular as opções de bairro/pagamento do filtro (não é a
   // fonte da tabela em si) e a busca por cliente (resolve os ids que
@@ -433,6 +444,14 @@ async function TransactionsTab({
   if (minValue) query = query.gte("gross_amount", Number(minValue));
   if (maxValue) query = query.lte("gross_amount", Number(maxValue));
   if (searchCustomerIds !== null) query = query.in("customer_id", searchCustomerIds.length ? searchCustomerIds : ["00000000-0000-0000-0000-000000000000"]);
+  // Nº do pedido: `source_external_id` é o próprio nº de pedido pra
+  // origens como Bar Fácil (codVenda) e CSV, mas pra Anota AI é o _id
+  // interno do Mongo (não o número que aparece no painel) — o número
+  // real da Anota AI só existe dentro de raw_payload.shortReference
+  // (ver [[extractOrderNumber]]). O OR cobre os dois casos numa busca só.
+  if (orderNumberSearch) {
+    query = query.or(`source_external_id.eq.${orderNumberSearch},raw_payload->>shortReference.eq.${orderNumberSearch}`);
+  }
 
   const from = (currentPage - 1) * TRANSACTIONS_PAGE_SIZE;
   const { data: ordersRaw, count } = await query.range(from, from + TRANSACTIONS_PAGE_SIZE - 1);
@@ -479,6 +498,19 @@ async function TransactionsTab({
     return shortReference !== undefined && shortReference !== null ? String(shortReference) : null;
   }
 
+  /** Nome bruto do pedido na Anota AI (`raw_payload.customer.name`) — usado
+   * só como INFORMAÇÃO, nunca como identidade de cliente (por isso não
+   * cria/vincula um registro em `customers`, ver upsertCustomer). Em
+   * pedidos de balcão/comanda (sem telefone) costuma ser o nome de quem
+   * atendeu ou um código de mesa/comanda ("C22"); em delivery, o nome do
+   * cliente mesmo, só que sem histórico entre pedidos (não é dedupável). */
+  function extractRawCustomerName(sourcePlatform: string, rawPayload: Record<string, unknown> | null): string | null {
+    if (sourcePlatform !== "anota_ai") return null;
+    const customer = rawPayload?.customer as { name?: unknown } | undefined;
+    const name = customer?.name;
+    return typeof name === "string" && name.trim() ? name.trim() : null;
+  }
+
   const rows: TransactionRow[] = ((ordersRaw ?? []) as unknown as OrderRaw[]).map((o) => {
     const customer = Array.isArray(o.customers) ? o.customers[0] : o.customers;
     const store = storeById.get(o.store_id);
@@ -493,7 +525,7 @@ async function TransactionsTab({
       neighborhood: o.neighborhood_raw,
       terminal: extractTerminal(o.source_platform, o.raw_payload),
       orderNumber: extractOrderNumber(o.source_platform, o.raw_payload),
-      customerName: customer?.full_name ?? null,
+      customerName: customer?.full_name ?? extractRawCustomerName(o.source_platform, o.raw_payload),
       customerPhone: customer?.phone_masked ?? null,
       grossAmount: o.gross_amount,
       discountAmount: o.discount_amount,
@@ -525,6 +557,7 @@ async function TransactionsTab({
           currentMin={minValue}
           currentMax={maxValue}
           currentSearch={search}
+          currentOrderNumber={orderNumberSearch}
         />
         <ExportTransactionsButton
           params={{

@@ -8,7 +8,8 @@ export type UserRole =
   | "gestor_loja"
   | "analista"
   | "somente_leitura"
-  | "products_viewer";
+  | "products_viewer"
+  | "vendas_viewer";
 
 export type PlatformType = "anota_ai" | "ifood" | "csv_import" | "event_tracking";
 

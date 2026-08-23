@@ -20,6 +20,7 @@ export function TransactionsExtraFilters({
   currentMin,
   currentMax,
   currentSearch,
+  currentOrderNumber,
 }: {
   paymentOptions: FilterOption[];
   neighborhoodOptions: FilterOption[];
@@ -28,10 +29,12 @@ export function TransactionsExtraFilters({
   currentMin?: string;
   currentMax?: string;
   currentSearch?: string;
+  currentOrderNumber?: string;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [search, setSearch] = useState(currentSearch ?? "");
+  const [orderNumber, setOrderNumber] = useState(currentOrderNumber ?? "");
   const [min, setMin] = useState(currentMin ?? "");
   const [max, setMax] = useState(currentMax ?? "");
 
@@ -54,6 +57,16 @@ export function TransactionsExtraFilters({
         onBlur={() => commit({ q: search })}
         onKeyDown={(e) => {
           if (e.key === "Enter") commit({ q: search });
+        }}
+        className="w-48"
+      />
+      <Input
+        placeholder="Buscar por nº do pedido..."
+        value={orderNumber}
+        onChange={(e) => setOrderNumber(e.target.value)}
+        onBlur={() => commit({ orderNumber })}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") commit({ orderNumber });
         }}
         className="w-48"
       />

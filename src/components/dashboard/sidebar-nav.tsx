@@ -25,6 +25,8 @@ const ROLE_LABELS: Record<string, string> = {
   gestor_loja: "Gestor de loja",
   analista: "Analista",
   somente_leitura: "Somente leitura",
+  products_viewer: "Visualizador de produtos",
+  vendas_viewer: "Visualizador de vendas",
 };
 
 function initials(text: string): string {
@@ -39,14 +41,16 @@ export function SidebarNav({
   email,
   role,
   isAdmin,
+  vendasViewerOnly = false,
 }: {
   organizationName: string | null;
   email: string;
   role: string | undefined;
   isAdmin: boolean;
+  vendasViewerOnly?: boolean;
 }) {
   const [collapsed, setCollapsed] = useState(false);
-  const groups = getVisibleNavGroups(isAdmin);
+  const groups = getVisibleNavGroups(isAdmin, vendasViewerOnly);
 
   return (
     <aside

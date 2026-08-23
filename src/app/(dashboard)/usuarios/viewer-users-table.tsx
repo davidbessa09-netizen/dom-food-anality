@@ -18,7 +18,15 @@ const FILTERS = [
 
 type FilterValue = (typeof FILTERS)[number]["value"];
 
-export function ViewerUsersTable({ users, stores }: { users: ViewerUserRow[]; stores: { id: string; name: string }[] }) {
+export function ViewerUsersTable({
+  users,
+  stores,
+  canEditStores = true,
+}: {
+  users: ViewerUserRow[];
+  stores: { id: string; name: string }[];
+  canEditStores?: boolean;
+}) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<FilterValue>("todos");
 
@@ -60,7 +68,7 @@ export function ViewerUsersTable({ users, stores }: { users: ViewerUserRow[]; st
             <TableRow>
               <TableHead>Pessoa</TableHead>
               <TableHead>Usuário</TableHead>
-              <TableHead>Lojas permitidas</TableHead>
+              {canEditStores && <TableHead>Lojas permitidas</TableHead>}
               <TableHead>Status</TableHead>
               <TableHead>Último acesso</TableHead>
               <TableHead>Criado em</TableHead>
@@ -72,9 +80,11 @@ export function ViewerUsersTable({ users, stores }: { users: ViewerUserRow[]; st
               <TableRow key={v.userId}>
                 <TableCell className="font-medium">{v.displayName}</TableCell>
                 <TableCell className="font-mono text-xs">{v.username}</TableCell>
-                <TableCell className="max-w-[220px] truncate text-sm text-muted-foreground">
-                  {v.allStores ? "Todas as lojas" : v.storeNames.join(", ") || "—"}
-                </TableCell>
+                {canEditStores && (
+                  <TableCell className="max-w-[220px] truncate text-sm text-muted-foreground">
+                    {v.allStores ? "Todas as lojas" : v.storeNames.join(", ") || "—"}
+                  </TableCell>
+                )}
                 <TableCell>
                   <Badge className={v.status === "ativo" ? "bg-success" : undefined} variant={v.status === "ativo" ? "default" : "secondary"}>
                     {v.status === "ativo" ? "Ativo" : "Inativo"}
@@ -87,13 +97,20 @@ export function ViewerUsersTable({ users, stores }: { users: ViewerUserRow[]; st
                   {v.createdAt ? formatDateTimeBR(v.createdAt, { day: "2-digit", month: "2-digit" }) : "—"}
                 </TableCell>
                 <TableCell>
-                  <ViewerUserActions userId={v.userId} status={v.status} stores={stores} currentStoreNames={v.storeNames} allStores={v.allStores} />
+                  <ViewerUserActions
+                    userId={v.userId}
+                    status={v.status}
+                    stores={stores}
+                    currentStoreNames={v.storeNames}
+                    allStores={v.allStores}
+                    canEditStores={canEditStores}
+                  />
                 </TableCell>
               </TableRow>
             ))}
             {filtered.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-sm text-muted-foreground">
+                <TableCell colSpan={canEditStores ? 7 : 6} className="text-center text-sm text-muted-foreground">
                   {users.length === 0 ? "Nenhum acesso restrito criado ainda." : "Nenhum usuário encontrado."}
                 </TableCell>
               </TableRow>
