@@ -35,8 +35,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // só "Vendas" — UX apenas, o middleware/RLS já bloqueiam de verdade
   // qualquer outra rota/dado mesmo que este cálculo falhe.
   const vendasViewerOnly = isViewerOnlyRoles(user.memberships.map((m) => m.role as UserRole)) && user.memberships[0]?.role === "vendas_viewer";
+  const isColaborador = user.memberships.length > 0 && user.memberships.every((m) => m.role === "colaborador");
 
   let organizations: { id: string; name: string }[] = [];
+  let colaboradorModules: string[] | null = null;
   let lastSyncedAt: string | null = null;
   let alertsCount = 0;
 
@@ -46,6 +48,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
     const { data: orgs } = await supabase.from("organizations").select("id, name").in("id", orgIds);
     organizations = (orgs ?? []).map((o) => ({ id: o.id, name: o.name }));
+
+    if (isColaborador) {
+      const { data: moduleRows } = await supabase.from("user_module_access").select("module").eq("user_id", user.id);
+      colaboradorModules = (moduleRows ?? []).map((m) => m.module);
+    }
 
     const { data: brands } = await supabase.from("brands").select("id").in("organization_id", orgIds);
     const brandIds = (brands ?? []).map((b) => b.id);
@@ -109,6 +116,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         role={user.memberships[0]?.role}
         isAdmin={isAdmin}
         vendasViewerOnly={vendasViewerOnly}
+        colaboradorModules={colaboradorModules}
       />
       <div className="flex flex-1 flex-col overflow-hidden">
         <Topbar
@@ -119,6 +127,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           lastSyncedAt={lastSyncedAt}
           alertsCount={alertsCount}
           vendasViewerOnly={vendasViewerOnly}
+          colaboradorModules={colaboradorModules}
         />
         <main className="flex-1 overflow-y-auto bg-muted/20 p-4 md:p-6">{children}</main>
       </div>

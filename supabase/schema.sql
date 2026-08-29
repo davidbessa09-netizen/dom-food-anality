@@ -13,7 +13,7 @@ create extension if not exists "pg_trgm"; -- para similaridade de nomes de produ
 -- ---------------------------------------------------------------------
 -- ENUMS
 -- ---------------------------------------------------------------------
-create type user_role as enum ('admin_geral','gestor_marca','gestor_loja','analista','somente_leitura','products_viewer','vendas_viewer');
+create type user_role as enum ('admin_geral','gestor_marca','gestor_loja','analista','somente_leitura','products_viewer','vendas_viewer','colaborador');
 create type platform_type as enum ('anota_ai','ifood','csv_import','event_tracking','bar_facil');
 create type sync_status as enum ('pending','running','success','partial_success','failed');
 create type order_status as enum ('criado','confirmado','em_preparo','saiu_para_entrega','concluido','cancelado');
@@ -1450,3 +1450,22 @@ alter table sync_runs add column if not exists source text not null default 'ano
 create policy sales_channels_write on sales_channels for all
   using (public.user_can_write_store(store_id))
   with check (public.user_can_write_store(store_id));
+
+-- Perfil "Colaborador" (ver 0021_colaborador_enum.sql /
+-- 0022_colaborador_module_access.sql): acesso de dado igual admin_geral
+-- (organização inteira, sem escopo por marca/loja — já coberto pelas
+-- funções genéricas de acesso acima, que não excluem 'colaborador'), mas
+-- com o menu/rotas restritos só às abas liberadas nesta tabela.
+create table if not exists user_module_access (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  organization_id uuid not null references organizations(id) on delete cascade,
+  module text not null,
+  created_at timestamptz not null default now(),
+  unique (user_id, module)
+);
+
+alter table user_module_access enable row level security;
+
+create policy user_module_access_select_own on user_module_access for select
+  using (user_id = auth.uid());

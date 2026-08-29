@@ -12,19 +12,23 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertTriangle, Copy, UserPlus } from "lucide-react";
 import { createProductsViewerUser } from "./actions";
+import { getAllModuleOptions } from "@/components/dashboard/nav-items";
 
 interface StoreOption {
   id: string;
   name: string;
 }
 
-type AccessRole = "products_viewer" | "vendas_viewer" | "admin_geral";
+type AccessRole = "products_viewer" | "vendas_viewer" | "admin_geral" | "colaborador";
 
 const ROLE_LABELS: Record<AccessRole, string> = {
   products_viewer: "Visualizador de produtos",
   vendas_viewer: "Visualizador de vendas",
   admin_geral: "Administrador geral",
+  colaborador: "Colaborador",
 };
+
+const MODULE_OPTIONS = getAllModuleOptions();
 
 export function NewAccessButton({ stores }: { stores: StoreOption[] }) {
   const [open, setOpen] = useState(false);
@@ -35,6 +39,7 @@ export function NewAccessButton({ stores }: { stores: StoreOption[] }) {
   const [role, setRole] = useState<AccessRole>("products_viewer");
   const [selectedStores, setSelectedStores] = useState<string[]>([]);
   const [allStores, setAllStores] = useState(false);
+  const [selectedModules, setSelectedModules] = useState<string[]>([]);
   const [mustChangePassword, setMustChangePassword] = useState(true);
   const [expiresAt, setExpiresAt] = useState("");
   const [note, setNote] = useState("");
@@ -49,6 +54,7 @@ export function NewAccessButton({ stores }: { stores: StoreOption[] }) {
     setRole("products_viewer");
     setSelectedStores([]);
     setAllStores(false);
+    setSelectedModules([]);
     setMustChangePassword(true);
     setExpiresAt("");
     setNote("");
@@ -64,6 +70,10 @@ export function NewAccessButton({ stores }: { stores: StoreOption[] }) {
       toast.error('Selecione ao menos uma loja, ou marque "Todas as lojas".');
       return;
     }
+    if (role === "colaborador" && selectedModules.length === 0) {
+      toast.error("Selecione ao menos uma aba pra liberar.");
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -73,6 +83,7 @@ export function NewAccessButton({ stores }: { stores: StoreOption[] }) {
         password,
         role,
         storeIds: allStores ? [] : selectedStores,
+        modules: selectedModules,
         mustChangePassword,
         expiresAt: expiresAt || null,
         note: note || null,
@@ -153,6 +164,7 @@ export function NewAccessButton({ stores }: { stores: StoreOption[] }) {
                 <SelectContent>
                   <SelectItem value="products_viewer">Visualizador de produtos</SelectItem>
                   <SelectItem value="vendas_viewer">Visualizador de vendas</SelectItem>
+                  <SelectItem value="colaborador">Colaborador</SelectItem>
                   <SelectItem value="admin_geral">Administrador geral</SelectItem>
                 </SelectContent>
               </Select>
@@ -168,6 +180,31 @@ export function NewAccessButton({ stores }: { stores: StoreOption[] }) {
             {role === "vendas_viewer" && (
               <div className="rounded-md border bg-muted/40 p-2.5 text-xs text-muted-foreground">
                 Este acesso vê só a aba Vendas (análise + transações) — sempre da organização inteira, sem escopo por loja.
+              </div>
+            )}
+
+            {role === "colaborador" && (
+              <div className="space-y-1.5">
+                <Label>Abas liberadas</Label>
+                <p className="text-xs text-muted-foreground">
+                  Acesso de dado igual ao administrador (organização inteira), mas só enxerga as abas marcadas abaixo.
+                </p>
+                <div className="max-h-52 space-y-1 overflow-y-auto rounded-md border p-2">
+                  {MODULE_OPTIONS.map((m) => (
+                    <label key={m.key} className="flex items-center justify-between gap-2 rounded-md px-1 py-1 hover:bg-muted/50">
+                      <span className="flex items-center gap-2 text-sm">
+                        <Checkbox
+                          checked={selectedModules.includes(m.key)}
+                          onCheckedChange={(c) =>
+                            setSelectedModules((prev) => (c ? [...prev, m.key] : prev.filter((k) => k !== m.key)))
+                          }
+                        />
+                        {m.label}
+                      </span>
+                      <span className="text-xs text-muted-foreground">{m.groupLabel}</span>
+                    </label>
+                  ))}
+                </div>
               </div>
             )}
 

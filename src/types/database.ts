@@ -9,7 +9,8 @@ export type UserRole =
   | "analista"
   | "somente_leitura"
   | "products_viewer"
-  | "vendas_viewer";
+  | "vendas_viewer"
+  | "colaborador";
 
 export type PlatformType = "anota_ai" | "ifood" | "csv_import" | "event_tracking";
 
@@ -62,6 +63,19 @@ export interface UserOrganization {
   role: UserRole;
   brand_id: string | null;
   store_id: string | null;
+  created_at: string;
+}
+
+/** Uma linha = uma aba/módulo liberado pra um usuário "colaborador" (ver
+ * migration 0022_colaborador_module_access.sql). Ausência de linha pra um
+ * módulo = sem acesso a essa aba, tanto na UI (menu) quanto no middleware
+ * (bloqueio real de rota). `module` é a chave do href sem a barra inicial
+ * (ver getAllModuleOptions em nav-items.ts), ex.: "vendas", "produtos". */
+export interface UserModuleAccess {
+  id: string;
+  user_id: string;
+  organization_id: string;
+  module: string;
   created_at: string;
 }
 

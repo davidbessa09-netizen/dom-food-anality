@@ -28,8 +28,7 @@ import { revenueByChannel, revenueByPaymentMethod } from "@/lib/metrics/sales-br
 import { formatPaymentMethod } from "@/lib/format/payment-method";
 import { CHANNEL_OPTIONS, FULFILLMENT_OPTIONS, ORDER_STATUS_OPTIONS } from "@/lib/filters/types";
 import { Percent, Receipt, ShoppingCart, Truck, Wallet } from "lucide-react";
-import type { Brand, Store, UserRole } from "@/types/database";
-import { isViewerOnlyRoles } from "@/lib/auth/username";
+import type { Brand, Store } from "@/types/database";
 
 const TRANSACTIONS_PAGE_SIZE = 25;
 const FILTER_OPTIONS_SAMPLE = 2000;
@@ -60,13 +59,10 @@ export default async function SalesPage({
   const user = await getCurrentUser();
   const supabase = await createClient();
 
-  // Visualizador de vendas (RH) só pode ver Transações — nunca a análise
-  // agregada. Força a aba independente do que vier na URL (não é só
-  // esconder o botão: sem isso, alguém digitando ?tab=analise veria os
-  // números agregados mesmo com o link do menu escondido).
-  const vendasViewerOnly =
-    isViewerOnlyRoles((user?.memberships ?? []).map((m) => m.role as UserRole)) && user?.memberships[0]?.role === "vendas_viewer";
-  const tab = vendasViewerOnly ? "transacoes" : typeof params.tab === "string" && params.tab === "transacoes" ? "transacoes" : "analise";
+  // Visualizador de vendas (RH): acesso total às duas abas de Vendas
+  // (Análise + Transações) — bloqueado de todo o resto do sistema pelo
+  // middleware/RLS, mas dentro desta página enxerga tudo.
+  const tab = typeof params.tab === "string" && params.tab === "transacoes" ? "transacoes" : "analise";
 
   const orgIds = [...new Set((user?.memberships ?? []).map((m) => m.organization_id))];
   const fallback = ["00000000-0000-0000-0000-000000000000"];
@@ -110,16 +106,14 @@ export default async function SalesPage({
             detalhada de pedidos vive aqui, não no dashboard.
           </p>
         </div>
-        {!vendasViewerOnly && (
-          <PageTabs
-            tabs={[
-              { value: "analise", label: "Análise" },
-              { value: "transacoes", label: "Transações" },
-            ]}
-            current={tab}
-            buildHref={buildHref}
-          />
-        )}
+        <PageTabs
+          tabs={[
+            { value: "analise", label: "Análise" },
+            { value: "transacoes", label: "Transações" },
+          ]}
+          current={tab}
+          buildHref={buildHref}
+        />
       </div>
 
       <GlobalFilterBar

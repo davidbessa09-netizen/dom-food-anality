@@ -39,8 +39,9 @@ export interface CreateProductsViewerInput {
   displayName: string;
   username: string;
   password: string;
-  role: "products_viewer" | "vendas_viewer" | "admin_geral";
-  storeIds: string[]; // vazio = todas as lojas da organização (ignorado pra vendas_viewer/admin_geral)
+  role: "products_viewer" | "vendas_viewer" | "admin_geral" | "colaborador";
+  storeIds: string[]; // vazio = todas as lojas da organização (ignorado pra vendas_viewer/admin_geral/colaborador)
+  modules: string[]; // só usado pra role "colaborador" — chaves de getAllModuleOptions()
   mustChangePassword: boolean;
   expiresAt: string | null;
   note: string | null;
@@ -115,6 +116,39 @@ export async function createProductsViewerUser(input: CreateProductsViewerInput)
     return { ok: true };
   }
 
+  if (input.role === "colaborador") {
+    if (input.modules.length === 0) {
+      await service.auth.admin.deleteUser(newUserId);
+      return { ok: false, error: "Selecione ao menos uma aba pra liberar." };
+    }
+    // Sempre organização inteira — mesmo alcance de dado que admin_geral
+    // (ver 0022_colaborador_module_access.sql), o que restringe é só o
+    // conjunto de abas abaixo.
+    const { error: colabLinkError } = await service.from("user_organizations").insert({
+      user_id: newUserId,
+      organization_id: admin.organizationId,
+      role: "colaborador" as UserRole,
+      brand_id: null,
+      store_id: null,
+    });
+    if (colabLinkError) {
+      await service.auth.admin.deleteUser(newUserId);
+      return { ok: false, error: "Falha ao conceder o acesso de Colaborador." };
+    }
+
+    const { error: modulesError } = await service.from("user_module_access").insert(
+      input.modules.map((module) => ({ user_id: newUserId, organization_id: admin.organizationId, module }))
+    );
+    if (modulesError) {
+      await service.auth.admin.deleteUser(newUserId);
+      return { ok: false, error: "Falha ao salvar as abas liberadas." };
+    }
+
+    await logAudit(admin.organizationId, admin.userId, "user_created", newUserId, { username, role: "colaborador", modules: input.modules });
+    revalidatePath("/usuarios");
+    return { ok: true };
+  }
+
   if (input.role === "vendas_viewer") {
     // Sempre organização inteira — este papel não tem escopo por loja (ver
     // migration 0020_vendas_viewer_access.sql).
@@ -164,6 +198,24 @@ export async function createProductsViewerUser(input: CreateProductsViewerInput)
     storeCount: input.storeIds.length || "todas",
   });
 
+  revalidatePath("/usuarios");
+  return { ok: true };
+}
+
+export async function updateColaboradorModules(userId: string, modules: string[]): Promise<ActionResult> {
+  const admin = await requireAdmin();
+  if (!admin) return { ok: false, error: "Apenas administradores podem alterar acessos." };
+  if (modules.length === 0) return { ok: false, error: "Selecione ao menos uma aba pra liberar." };
+
+  const service = createServiceClient();
+  await service.from("user_module_access").delete().eq("user_id", userId);
+
+  const { error } = await service
+    .from("user_module_access")
+    .insert(modules.map((module) => ({ user_id: userId, organization_id: admin.organizationId, module })));
+  if (error) return { ok: false, error: "Falha ao atualizar as abas liberadas." };
+
+  await logAudit(admin.organizationId, admin.userId, "user_modules_updated", userId, { modules });
   revalidatePath("/usuarios");
   return { ok: true };
 }
@@ -253,6 +305,50 @@ export async function listProductsViewerUsers(): Promise<ViewerUserRow[]> {
 
 export async function listVendasViewerUsers(): Promise<ViewerUserRow[]> {
   return listViewerUsersByRole("vendas_viewer");
+}
+
+export interface ColaboradorUserRow {
+  userId: string;
+  displayName: string;
+  username: string;
+  status: "ativo" | "inativo";
+  modules: string[];
+  lastLoginAt: string | null;
+  createdAt: string;
+}
+
+export async function listColaboradorUsers(): Promise<ColaboradorUserRow[]> {
+  const admin = await requireAdmin();
+  if (!admin) return [];
+
+  const supabase = await createClient();
+  const { data: memberships } = await supabase
+    .from("user_organizations")
+    .select("user_id")
+    .eq("organization_id", admin.organizationId)
+    .eq("role", "colaborador");
+
+  const userIds = [...new Set((memberships ?? []).map((m) => m.user_id))];
+  if (userIds.length === 0) return [];
+
+  const service = createServiceClient();
+  const { data: profiles } = await service.from("user_profiles").select("*").in("user_id", userIds);
+  const { data: moduleRows } = await service.from("user_module_access").select("user_id, module").in("user_id", userIds);
+
+  return userIds.map((userId) => {
+    const profile = (profiles ?? []).find((p) => p.user_id === userId);
+    const modules = (moduleRows ?? []).filter((m) => m.user_id === userId).map((m) => m.module);
+
+    return {
+      userId,
+      displayName: profile?.display_name ?? "—",
+      username: profile?.username ?? "—",
+      status: (profile?.status as "ativo" | "inativo") ?? "ativo",
+      modules,
+      lastLoginAt: profile?.last_login_at ?? null,
+      createdAt: profile?.created_at ?? "",
+    };
+  });
 }
 
 async function listViewerUsersByRole(role: "products_viewer" | "vendas_viewer"): Promise<ViewerUserRow[]> {

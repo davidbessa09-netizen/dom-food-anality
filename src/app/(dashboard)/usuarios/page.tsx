@@ -3,9 +3,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/auth/session";
-import { listProductsViewerUsers, listVendasViewerUsers } from "./actions";
+import { listProductsViewerUsers, listVendasViewerUsers, listColaboradorUsers } from "./actions";
 import { NewAccessButton } from "./user-form";
 import { ViewerUsersTable } from "./viewer-users-table";
+import { ColaboradorUsersTable } from "./colaborador-users-table";
 
 const ROLE_LABELS: Record<string, string> = {
   admin_geral: "Administrador geral",
@@ -15,6 +16,7 @@ const ROLE_LABELS: Record<string, string> = {
   somente_leitura: "Somente leitura",
   products_viewer: "Visualizador de produtos",
   vendas_viewer: "Visualizador de vendas",
+  colaborador: "Colaborador",
 };
 
 export default async function UsersPage() {
@@ -28,7 +30,7 @@ export default async function UsersPage() {
     .from("user_organizations")
     .select("id, user_id, role, brand_id, store_id, organization_id")
     .in("organization_id", orgIds.length ? orgIds : ["00000000-0000-0000-0000-000000000000"])
-    .not("role", "in", "(products_viewer,vendas_viewer)");
+    .not("role", "in", "(products_viewer,vendas_viewer,colaborador)");
 
   let stores: { id: string; name: string }[] = [];
   if (isAdmin) {
@@ -40,6 +42,7 @@ export default async function UsersPage() {
 
   const viewerUsers = isAdmin ? await listProductsViewerUsers() : [];
   const vendasViewerUsers = isAdmin ? await listVendasViewerUsers() : [];
+  const colaboradorUsers = isAdmin ? await listColaboradorUsers() : [];
 
   return (
     <div className="space-y-4">
@@ -73,6 +76,21 @@ export default async function UsersPage() {
           </CardHeader>
           <CardContent>
             <ViewerUsersTable users={vendasViewerUsers} stores={[]} canEditStores={false} />
+          </CardContent>
+        </Card>
+      )}
+
+      {isAdmin && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Colaboradores</CardTitle>
+            <CardDescription>
+              Acesso de dado igual ao administrador (organização inteira), restrito só às abas liberadas por pessoa — sem e-mail, login por
+              nome de usuário.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ColaboradorUsersTable users={colaboradorUsers} />
           </CardContent>
         </Card>
       )}

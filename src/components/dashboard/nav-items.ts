@@ -81,15 +81,40 @@ const ALL_NAV_GROUPS: NavGroup[] = [
   },
 ];
 
+/** Toda aba/módulo controlável pelo perfil "Colaborador" (ver
+ * user_module_access) — chave = href sem a barra inicial, na mesma ordem
+ * exibida no menu. Fonte única de verdade: deriva de ALL_NAV_GROUPS, então
+ * qualquer item de menu novo já aparece automaticamente na lista de
+ * permissões do formulário de novo usuário. */
+export interface ModuleOption {
+  key: string;
+  label: string;
+  groupLabel: string;
+}
+
+export function getAllModuleOptions(): ModuleOption[] {
+  return ALL_NAV_GROUPS.flatMap((g) => g.items.map((item) => ({ key: item.href.slice(1), label: item.label, groupLabel: g.label })));
+}
+
 /** UX only — esconde o grupo Administração de quem não é admin_geral, e
  * reduz o menu inteiro a só "Vendas" pro Visualizador de vendas (papel
  * viewer-only, ver middleware). Nunca é a barreira de segurança real:
  * RLS e as checagens de role no servidor continuam sendo a proteção de
  * verdade (ver SECURITY.md) — o middleware já bloqueia qualquer outra
- * rota mesmo que este filtro de UI falhe ou seja contornado. */
-export function getVisibleNavGroups(isAdmin: boolean, vendasViewerOnly = false): NavGroup[] {
+ * rota mesmo que este filtro de UI falhe ou seja contornado.
+ *
+ * `colaboradorModules` (quando não-nulo) restringe o menu só às abas
+ * liberadas pra esse Colaborador (ver user_module_access) — mesma lógica
+ * de "UX only", o middleware bloqueia a rota de verdade. */
+export function getVisibleNavGroups(isAdmin: boolean, vendasViewerOnly = false, colaboradorModules: string[] | null = null): NavGroup[] {
   if (vendasViewerOnly) {
     return [{ label: "Vendas", items: [{ href: "/vendas", label: "Vendas", icon: ShoppingCart }] }];
+  }
+  if (colaboradorModules) {
+    const allowed = new Set(colaboradorModules);
+    return ALL_NAV_GROUPS.map((g) => ({ ...g, items: g.items.filter((item) => allowed.has(item.href.slice(1))) })).filter(
+      (g) => g.items.length > 0
+    );
   }
   if (isAdmin) return ALL_NAV_GROUPS;
   return ALL_NAV_GROUPS.filter((g) => g.label !== "Administração");

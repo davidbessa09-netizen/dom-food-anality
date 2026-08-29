@@ -78,6 +78,33 @@ export async function updateSession(request: NextRequest) {
         return NextResponse.redirect(url);
       }
     }
+
+    // Bloqueio real de rota pro perfil "Colaborador": só pode abrir as
+    // abas liberadas em user_module_access (ver 0022_colaborador_module_
+    // access.sql) — igual ao bloqueio viewer-only acima, roda em todo
+    // request e nunca depende só do menu estar filtrado na UI.
+    if (roles.length > 0 && roles.every((r) => r === "colaborador")) {
+      const { data: profile } = await supabase.from("user_profiles").select("status, expires_at").eq("user_id", user.id).maybeSingle();
+      const expired = Boolean(profile?.expires_at && new Date(profile.expires_at).getTime() < Date.now());
+      if (profile?.status === "inativo" || expired) {
+        await supabase.auth.signOut();
+        const url = request.nextUrl.clone();
+        url.pathname = "/login";
+        return NextResponse.redirect(url);
+      }
+
+      const { data: moduleRows } = await supabase.from("user_module_access").select("module").eq("user_id", user.id);
+      const allowedModules = new Set((moduleRows ?? []).map((m) => m.module));
+      const currentModule = path.split("/").filter(Boolean)[0] ?? "";
+
+      if (!allowedModules.has(currentModule)) {
+        const firstAllowed = allowedModules.values().next().value;
+        const url = request.nextUrl.clone();
+        url.pathname = firstAllowed ? `/${firstAllowed}` : "/login";
+        url.searchParams.set("blocked", "1");
+        return NextResponse.redirect(url);
+      }
+    }
   }
 
   return supabaseResponse;

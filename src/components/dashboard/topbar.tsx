@@ -29,6 +29,7 @@ const ROLE_LABELS: Record<string, string> = {
   somente_leitura: "Somente leitura",
   products_viewer: "Visualizador de produtos",
   vendas_viewer: "Visualizador de vendas",
+  colaborador: "Colaborador",
 };
 
 /** Deriva um nome de exibição e iniciais a partir do e-mail — não há campo
@@ -65,6 +66,7 @@ export function Topbar({
   lastSyncedAt,
   alertsCount,
   vendasViewerOnly = false,
+  colaboradorModules = null,
 }: {
   isAdmin: boolean;
   email: string;
@@ -73,10 +75,11 @@ export function Topbar({
   lastSyncedAt: string | null;
   alertsCount: number;
   vendasViewerOnly?: boolean;
+  colaboradorModules?: string[] | null;
 }) {
   const router = useRouter();
   const pathname = usePathname();
-  const groups = getVisibleNavGroups(isAdmin, vendasViewerOnly);
+  const groups = getVisibleNavGroups(isAdmin, vendasViewerOnly, colaboradorModules);
   const activeItem = findActiveNavItem(pathname, groups);
   const { firstName, initials } = displayNameFromEmail(email);
 
