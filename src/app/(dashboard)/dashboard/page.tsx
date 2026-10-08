@@ -148,6 +148,67 @@ export default async function ExecutiveDashboardPage({
   const brandById = new Map((brands ?? []).map((b) => [b.id, b]));
   const storeById = new Map((stores ?? []).map((s) => [s.id, s]));
 
+  // Todas as consultas de pedidos/produtos dependem só de lojas + período:
+  // disparadas JÁ, em paralelo, enquanto o bloco de sincronização roda.
+  const period = customFrom && customTo ? resolveCustomPeriod(customFrom, customTo) : resolvePeriod(preset);
+  const previous = previousPeriod(period);
+
+  const currentOrdersP = fetchAll(
+    supabase
+      .from("orders")
+      .select("id, store_id, status, gross_amount, net_amount, discount_amount, delivery_fee_amount, customer_id, ordered_at")
+      .in("store_id", storeFallback)
+      .gte("ordered_at", period.start.toISOString())
+      .lte("ordered_at", period.end.toISOString())
+  );
+  const previousOrdersP = fetchAll(
+    supabase
+      .from("orders")
+      .select("id, store_id, status, gross_amount, net_amount, discount_amount, delivery_fee_amount, customer_id, ordered_at")
+      .in("store_id", storeFallback)
+      .gte("ordered_at", previous.start.toISOString())
+      .lte("ordered_at", previous.end.toISOString())
+  );
+  // "Clientes novos"/"Recorrentes" precisam da 1ª compra em TODO o histórico,
+  // não só no período — e a mesma base alimenta a segmentação RFM abaixo.
+  const allTimeOrdersP = fetchAll(
+    supabase
+      .from("orders")
+      .select("customer_id, gross_amount, ordered_at")
+      .in("store_id", storeFallback)
+      .not("customer_id", "is", null)
+  );
+  const recentOrdersP = supabase
+    .from("orders")
+    .select("id, ordered_at, gross_amount, status, customers(full_name), order_items(original_name, quantity, is_addon)")
+    .in("store_id", storeFallback)
+    .gte("ordered_at", period.start.toISOString())
+    .lte("ordered_at", period.end.toISOString())
+    .order("ordered_at", { ascending: false })
+    .limit(3);
+  const cancelledOrdersP = fetchAll(
+    supabase
+      .from("orders")
+      .select("id, store_id, gross_amount, ordered_at, cancellations(reason)")
+      .in("store_id", storeFallback)
+      .eq("status", "cancelado")
+      .gte("ordered_at", period.start.toISOString())
+      .lte("ordered_at", period.end.toISOString())
+  );
+  const productsP = supabase
+    .from("products")
+    .select("*")
+    .in("brand_id", brandIds.length ? brandIds : fallback)
+    .returns<Product[]>();
+  const orderItemsP = fetchAll(
+    supabase
+      .from("orders")
+      .select("status, ordered_at, order_items(original_name, quantity, total_price, is_addon)")
+      .in("store_id", storeFallback)
+      .gte("ordered_at", period.start.toISOString())
+      .lte("ordered_at", period.end.toISOString())
+  );
+
   // Cobertura de sincronização — reusada pelo painel "Sobre estes dados", pelo
   // KPI "Dados incompletos" e pelos alertas operacionais abaixo.
   const { data: channelsForCoverage } = await supabase
@@ -212,42 +273,29 @@ export default async function ExecutiveDashboardPage({
     staleThresholdMinutes: STALE_THRESHOLD_MINUTES,
   });
 
-  const period = customFrom && customTo ? resolveCustomPeriod(customFrom, customTo) : resolvePeriod(preset);
-  const previous = previousPeriod(period);
-
-  const { data: currentOrdersRaw } = await fetchAll(
-      supabase
-    .from("orders")
-    .select("id, store_id, status, gross_amount, net_amount, discount_amount, delivery_fee_amount, customer_id, ordered_at")
-    .in("store_id", storeFallback)
-    .gte("ordered_at", period.start.toISOString())
-    .lte("ordered_at", period.end.toISOString())
-    );
-
-  const { data: previousOrdersRaw } = await fetchAll(
-      supabase
-    .from("orders")
-    .select("id, store_id, status, gross_amount, net_amount, discount_amount, delivery_fee_amount, customer_id, ordered_at")
-    .in("store_id", storeFallback)
-    .gte("ordered_at", previous.start.toISOString())
-    .lte("ordered_at", previous.end.toISOString())
-    );
+  const [
+    { data: currentOrdersRaw },
+    { data: previousOrdersRaw },
+    { data: allTimeOrders },
+    { data: recentOrdersRaw },
+    { data: cancelledOrdersRaw },
+    { data: products },
+    { data: orderItemsRaw },
+  ] = await Promise.all([
+    currentOrdersP,
+    previousOrdersP,
+    allTimeOrdersP,
+    recentOrdersP,
+    cancelledOrdersP,
+    productsP,
+    orderItemsP,
+  ]);
 
   type StoreOrderRow = OrderMetricInput & { store_id: string; ordered_at: string };
   const currentOrders = (currentOrdersRaw ?? []) as StoreOrderRow[];
   const previousOrders = (previousOrdersRaw ?? []) as StoreOrderRow[];
   const hasOrders = currentOrders.length > 0 || previousOrders.length > 0;
   const hasPriorPeriodData = previousOrders.length > 0;
-
-  // "Clientes novos"/"Recorrentes" precisam da 1ª compra em TODO o histórico,
-  // não só no período — e a mesma base alimenta a segmentação RFM abaixo.
-  const { data: allTimeOrders } = await fetchAll(
-      supabase
-    .from("orders")
-    .select("customer_id, gross_amount, ordered_at")
-    .in("store_id", storeFallback)
-    .not("customer_id", "is", null)
-    );
 
   const firstOrderDateByCustomer = new Map<string, string>();
   for (const o of allTimeOrders ?? []) {
@@ -265,26 +313,7 @@ export default async function ExecutiveDashboardPage({
   const rfmRows = buildRfmSegmentation(computeCustomerStats(customerOrders, new Date().toISOString()));
   const atRiskCustomersCount = rfmRows.filter((r) => r.segment === "Em risco" || r.segment === "Perdidos").length;
 
-  const { data: recentOrdersRaw } = await supabase
-    .from("orders")
-    .select("id, ordered_at, gross_amount, status, customers(full_name), order_items(original_name, quantity, is_addon)")
-    .in("store_id", storeFallback)
-    .gte("ordered_at", period.start.toISOString())
-    .lte("ordered_at", period.end.toISOString())
-    .order("ordered_at", { ascending: false })
-    .limit(3);
-
   const recentOrders = (recentOrdersRaw ?? []) as unknown as RecentOrderRow[];
-
-  const { data: cancelledOrdersRaw } = await fetchAll(
-      supabase
-    .from("orders")
-    .select("id, store_id, gross_amount, ordered_at, cancellations(reason)")
-    .in("store_id", storeFallback)
-    .eq("status", "cancelado")
-    .gte("ordered_at", period.start.toISOString())
-    .lte("ordered_at", period.end.toISOString())
-    );
 
   const cancelledOrders: CancelledOrderInput[] = ((cancelledOrdersRaw ?? []) as unknown as CancelledOrderRaw[]).map(
     (o) => {
@@ -299,21 +328,6 @@ export default async function ExecutiveDashboardPage({
     }
   );
   const topCancelReason = cancellationsByReason(cancelledOrders)[0] ?? null;
-
-  const { data: products } = await supabase
-    .from("products")
-    .select("*")
-    .in("brand_id", brandIds.length ? brandIds : fallback)
-    .returns<Product[]>();
-
-  const { data: orderItemsRaw } = await fetchAll(
-      supabase
-    .from("orders")
-    .select("status, ordered_at, order_items(original_name, quantity, total_price, is_addon)")
-    .in("store_id", storeFallback)
-    .gte("ordered_at", period.start.toISOString())
-    .lte("ordered_at", period.end.toISOString())
-    );
 
   function flattenItems(rows: OrderWithItems[]): ProductOrderItemInput[] {
     return rows.flatMap((order) =>
