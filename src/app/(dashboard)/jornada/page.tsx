@@ -13,6 +13,7 @@ import {
   type OrderStatus,
 } from "@/lib/metrics/funnel";
 import type { Brand, Store } from "@/types/database";
+import { fetchAll } from "@/lib/supabase/fetch-all";
 
 export default async function JourneyPage({
   searchParams,
@@ -51,12 +52,14 @@ export default async function JourneyPage({
   const storeIds = (stores ?? []).map((s) => s.id);
   const storeFallback = storeIds.length ? storeIds : fallback;
 
-  const { data: ordersRaw } = await supabase
+  const { data: ordersRaw } = await fetchAll(
+      supabase
     .from("orders")
     .select("status")
     .in("store_id", storeFallback)
     .gte("ordered_at", period.start.toISOString())
-    .lte("ordered_at", period.end.toISOString());
+    .lte("ordered_at", period.end.toISOString())
+    );
 
   const statuses = (ordersRaw ?? []).map((o) => o.status as OrderStatus);
   const distribution = buildStatusDistribution(statuses);
