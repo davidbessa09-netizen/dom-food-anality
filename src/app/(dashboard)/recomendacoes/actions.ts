@@ -22,6 +22,7 @@ import {
   type OpportunityDraft,
 } from "@/lib/intelligence/opportunity-rules";
 import type { Brand } from "@/types/database";
+import { fetchAll } from "@/lib/supabase/fetch-all";
 
 const MIN_SAMPLE_DAYS = 14;
 const LOW_QUANTITY_THRESHOLD = 3;
@@ -65,18 +66,22 @@ export async function refreshOpportunities(): Promise<SimpleResult> {
     const storeFallback = storeIds.length ? storeIds : fallback;
 
     // Receita: queda de faturamento.
-    const { data: currentOrdersRaw } = await supabase
+    const { data: currentOrdersRaw } = await fetchAll(
+      supabase
       .from("orders")
       .select("id, status, gross_amount, net_amount, discount_amount, delivery_fee_amount, customer_id")
       .in("store_id", storeFallback)
       .gte("ordered_at", period.start.toISOString())
-      .lte("ordered_at", period.end.toISOString());
-    const { data: previousOrdersRaw } = await supabase
+      .lte("ordered_at", period.end.toISOString())
+    );
+    const { data: previousOrdersRaw } = await fetchAll(
+      supabase
       .from("orders")
       .select("id, status, gross_amount, net_amount, discount_amount, delivery_fee_amount, customer_id")
       .in("store_id", storeFallback)
       .gte("ordered_at", previous.start.toISOString())
-      .lte("ordered_at", previous.end.toISOString());
+      .lte("ordered_at", previous.end.toISOString())
+    );
     const currentOrders = (currentOrdersRaw ?? []) as OrderMetricInput[];
     const previousOrders = (previousOrdersRaw ?? []) as OrderMetricInput[];
 
@@ -89,13 +94,15 @@ export async function refreshOpportunities(): Promise<SimpleResult> {
     if (revenueDrop) drafts.push(revenueDrop);
 
     // Operação: cancelamento.
-    const { data: cancelledRaw } = await supabase
+    const { data: cancelledRaw } = await fetchAll(
+      supabase
       .from("orders")
       .select("id, store_id, gross_amount, ordered_at, cancellations(reason)")
       .in("store_id", storeFallback)
       .eq("status", "cancelado")
       .gte("ordered_at", period.start.toISOString())
-      .lte("ordered_at", period.end.toISOString());
+      .lte("ordered_at", period.end.toISOString())
+    );
     interface CancelledRaw {
       id: string;
       store_id: string;
@@ -120,11 +127,12 @@ export async function refreshOpportunities(): Promise<SimpleResult> {
 
     // Produtos: sem venda (todo o histórico, mesma classificação de /produtos).
     const { data: products } = await supabase.from("products").select("*").eq("brand_id", brand.id);
-    const { data: allTimeOrdersRaw } = await supabase
+    const { data: allTimeOrdersRaw } = await fetchAll(
+      supabase
       .from("orders")
       .select("status, ordered_at, order_items(original_name, quantity, total_price, is_addon)")
       .in("store_id", storeFallback)
-      .limit(20000);
+    );
     interface OrderWithItems {
       status: string;
       ordered_at: string;
@@ -206,11 +214,13 @@ export async function refreshOpportunities(): Promise<SimpleResult> {
     if (dupProductsOpp) drafts.push(dupProductsOpp);
 
     // Clientes: em risco/perdidos (RFM, todo o histórico).
-    const { data: customerOrdersRaw } = await supabase
+    const { data: customerOrdersRaw } = await fetchAll(
+      supabase
       .from("orders")
       .select("customer_id, gross_amount, ordered_at")
       .in("store_id", storeFallback)
-      .not("customer_id", "is", null);
+      .not("customer_id", "is", null)
+    );
     const customerOrders: CustomerOrderInput[] = (customerOrdersRaw ?? []).map((o) => ({
       customer_id: o.customer_id as string,
       gross_amount: o.gross_amount,
