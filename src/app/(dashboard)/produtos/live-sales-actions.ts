@@ -6,6 +6,7 @@ import { CHANNEL_OPTIONS } from "@/lib/filters/types";
 import { formatPaymentMethod } from "@/lib/format/payment-method";
 import { isPeriodPreset, resolveCustomPeriod, resolvePeriod, previousPeriod, type PeriodPreset } from "@/lib/dates/period";
 import type { SaleItemEvent } from "@/lib/metrics/live-sales";
+import { fetchAll } from "@/lib/supabase/fetch-all";
 
 const EVENT_CAP = 8000;
 
@@ -85,15 +86,14 @@ async function fetchEvents(
     .in("store_id", storeIds.length ? storeIds : fallback)
     .gte("ordered_at", start)
     .lte("ordered_at", end)
-    .order("ordered_at", { ascending: false })
-    .limit(EVENT_CAP);
+    .order("ordered_at", { ascending: false });
 
   if (filters.channel) query = query.eq("source_platform", filters.channel);
   if (filters.fulfillment) query = query.eq("fulfillment_type", filters.fulfillment);
   if (filters.payment) query = query.eq("payment_method", filters.payment);
   if (filters.status) query = query.eq("status", filters.status);
 
-  const { data } = await query;
+  const { data } = await fetchAll(query, { max: EVENT_CAP });
   const rows = (data ?? []) as unknown as OrderRow[];
 
   const events: SaleItemEvent[] = rows.flatMap((order) =>
