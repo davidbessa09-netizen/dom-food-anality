@@ -21,23 +21,31 @@ export function computeCustomerStats(
   orders: CustomerOrderInput[],
   now: string
 ): CustomerRfmStats[] {
-  const byCustomer = new Map<string, { orders: CustomerOrderInput[] }>();
+  const byCustomer = new Map<string, { first: string; last: string; count: number; monetary: number }>();
   for (const o of orders) {
-    const entry = byCustomer.get(o.customer_id);
-    if (entry) entry.orders.push(o);
-    else byCustomer.set(o.customer_id, { orders: [o] });
+    const e = byCustomer.get(o.customer_id);
+    if (!e) {
+      byCustomer.set(o.customer_id, { first: o.ordered_at, last: o.ordered_at, count: 1, monetary: o.gross_amount });
+      continue;
+    }
+    if (o.ordered_at.localeCompare(e.first) < 0) e.first = o.ordered_at;
+    if (o.ordered_at.localeCompare(e.last) > 0) e.last = o.ordered_at;
+    e.count += 1;
+    e.monetary += o.gross_amount;
   }
 
   const nowMs = new Date(now).getTime();
 
-  return Array.from(byCustomer.entries()).map(([customerId, { orders: custOrders }]) => {
-    const sorted = [...custOrders].sort((a, b) => a.ordered_at.localeCompare(b.ordered_at));
-    const firstOrderAt = sorted[0].ordered_at;
-    const lastOrderAt = sorted[sorted.length - 1].ordered_at;
-    const monetary = custOrders.reduce((sum, o) => sum + o.gross_amount, 0);
-    const recencyDays = Math.floor((nowMs - new Date(lastOrderAt).getTime()) / (1000 * 60 * 60 * 24));
-
-    return { customerId, recencyDays, frequency: custOrders.length, monetary, firstOrderAt, lastOrderAt };
+  return Array.from(byCustomer.entries()).map(([customerId, e]) => {
+    const recencyDays = Math.floor((nowMs - new Date(e.last).getTime()) / (1000 * 60 * 60 * 24));
+    return {
+      customerId,
+      recencyDays,
+      frequency: e.count,
+      monetary: e.monetary,
+      firstOrderAt: e.first,
+      lastOrderAt: e.last,
+    };
   });
 }
 
@@ -54,10 +62,39 @@ export function computeCustomerStats(
  */
 function percentileScore(value: number, sortedAsc: number[], higherIsBetter: boolean): number {
   if (sortedAsc.length <= 1) return 3;
-  const effectiveValue = higherIsBetter ? value : -value;
-  const effectiveSorted = higherIsBetter ? sortedAsc : sortedAsc.map((v) => -v).sort((a, b) => a - b);
-  const rank = effectiveSorted.filter((v) => v <= effectiveValue).length / effectiveSorted.length;
+  // Equivalente a: inverter o sinal (se "menor é melhor") e contar quantos
+  // valores efetivos são <= ao valor efetivo. Feito com busca binária sobre
+  // o array já ordenado — antes era filter + map/sort por cliente (O(n² log n)),
+  // o que travava a página com milhares de clientes.
+  const count = higherIsBetter
+    ? upperBound(sortedAsc, value) // #{v <= value}
+    : sortedAsc.length - lowerBound(sortedAsc, value); // #{-v <= -value} = #{v >= value}
+  const rank = count / sortedAsc.length;
   return Math.max(1, Math.min(5, Math.ceil(rank * 5)));
+}
+
+/** Primeiro índice com arr[i] >= x. */
+function lowerBound(arr: number[], x: number): number {
+  let lo = 0;
+  let hi = arr.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (arr[mid] < x) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/** Primeiro índice com arr[i] > x. */
+function upperBound(arr: number[], x: number): number {
+  let lo = 0;
+  let hi = arr.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (arr[mid] <= x) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
 }
 
 export type RfmSegment =

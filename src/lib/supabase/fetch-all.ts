@@ -10,14 +10,34 @@ import type { PostgrestError } from "@supabase/supabase-js";
  * `fetchAll` reexecuta a mesma query em páginas de `PAGE_SIZE` via
  * `.range()` até esgotar o resultado (ou atingir `max`), sempre com
  * desempate estável por `id` pra nenhuma linha duplicar/pular entre
- * páginas. O builder do postgrest-js é reexecutável (cada `await` faz um
- * fetch novo com a URL atual) e `.range()` sobrescreve offset/limit.
+ * páginas.
+ *
+ * Performance: a 1ª página é buscada sozinha (a maioria das queries cabe
+ * nela → 1 request só). Se ela vier cheia, as páginas seguintes são
+ * buscadas em PARALELO, em lotes de `PARALLEL_PAGES`, cada uma num clone
+ * do builder (o builder do postgrest-js guarda a URL num objeto mutável,
+ * então disparar `.range()` concorrente no MESMO builder faria todas as
+ * páginas pedirem o mesmo offset).
  */
 const PAGE_SIZE = 1000;
+const PARALLEL_PAGES = 4;
 
-interface PaginatableQuery<Row> extends PromiseLike<{ data: Row[] | null; error: PostgrestError | null }> {
+type PageResult<Row> = { data: Row[] | null; error: PostgrestError | null };
+
+interface PaginatableQuery<Row> extends PromiseLike<PageResult<Row>> {
   order(column: string, options?: { ascending?: boolean }): unknown;
-  range(from: number, to: number): PromiseLike<{ data: Row[] | null; error: PostgrestError | null }>;
+  range(from: number, to: number): PromiseLike<PageResult<Row>>;
+}
+
+/** Clona um PostgrestBuilder real (URL própria). Retorna null se não for clonável (ex.: fakes de teste). */
+function cloneBuilder<Row>(query: PaginatableQuery<Row>): PaginatableQuery<Row> | null {
+  const q = query as unknown as { url?: unknown; retryEnabled?: boolean; constructor: new (b: unknown) => unknown };
+  if (!(q.url instanceof URL)) return null;
+  return new q.constructor({
+    ...q,
+    url: new URL(q.url.toString()),
+    retry: q.retryEnabled,
+  }) as PaginatableQuery<Row>;
 }
 
 export async function fetchAll<Row>(
@@ -26,14 +46,34 @@ export async function fetchAll<Row>(
 ): Promise<{ data: Row[]; error: PostgrestError | null }> {
   if (orderById) query.order("id", { ascending: true });
 
-  const rows: Row[] = [];
-  for (let from = 0; from < max; from += PAGE_SIZE) {
+  const fetchPage = (from: number, parallel: boolean) => {
     const to = Math.min(from + PAGE_SIZE, max) - 1;
-    const { data, error } = await query.range(from, to);
-    if (error) return { data: rows, error };
-    const page = data ?? [];
-    rows.push(...page);
-    if (page.length < to - from + 1) break;
+    const target = (parallel ? cloneBuilder(query) : null) ?? query;
+    return Promise.resolve(target.range(from, to)).then((res) => ({ res, expected: to - from + 1 }));
+  };
+
+  const rows: Row[] = [];
+  const canParallel = cloneBuilder(query) !== null;
+
+  // 1ª página sozinha.
+  const first = await fetchPage(0, false);
+  if (first.res.error) return { data: rows, error: first.res.error };
+  rows.push(...(first.res.data ?? []));
+  if ((first.res.data ?? []).length < first.expected) return { data: rows, error: null };
+
+  let from = PAGE_SIZE;
+  while (from < max) {
+    const batchSize = canParallel ? PARALLEL_PAGES : 1;
+    const starts: number[] = [];
+    for (let i = 0; i < batchSize && from < max; i++, from += PAGE_SIZE) starts.push(from);
+
+    const pages = await Promise.all(starts.map((s) => fetchPage(s, canParallel)));
+    for (const { res, expected } of pages) {
+      if (res.error) return { data: rows, error: res.error };
+      const page = res.data ?? [];
+      rows.push(...page);
+      if (page.length < expected) return { data: rows, error: null };
+    }
   }
   return { data: rows, error: null };
 }
