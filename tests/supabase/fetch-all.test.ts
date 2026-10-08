@@ -39,3 +39,31 @@ describe("fetchAll", () => {
     expect(calls).toHaveLength(2);
   });
 });
+
+describe("fetchAll com builder real do postgrest-js", () => {
+  it("busca páginas em paralelo, cada uma com seu próprio offset", async () => {
+    const { PostgrestClient } = await import("@supabase/postgrest-js");
+    const total = 4321;
+    const seen: { offset: number; limit: number }[] = [];
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const fakeFetch = async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      const offset = Number(url.searchParams.get("offset") ?? 0);
+      const limit = Math.min(Number(url.searchParams.get("limit") ?? 1000), 1000);
+      seen.push({ offset, limit });
+      inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((r) => setTimeout(r, 5));
+      inFlight--;
+      const rows = Array.from({ length: Math.max(0, Math.min(limit, total - offset)) }, (_, i) => ({ id: offset + i }));
+      return new Response(JSON.stringify(rows), { status: 200, headers: { "content-type": "application/json" } });
+    };
+    const client = new PostgrestClient("http://x.test/rest/v1", { fetch: fakeFetch as typeof fetch });
+    const { data, error } = await fetchAll<{ id: number }>(client.from("orders").select("id") as never);
+    expect(error).toBeNull();
+    expect(data.map((r) => r.id)).toEqual(Array.from({ length: total }, (_, i) => i));
+    expect(new Set(seen.map((s) => s.offset)).size).toBe(seen.length);
+    expect(maxInFlight).toBeGreaterThan(1);
+  });
+});
