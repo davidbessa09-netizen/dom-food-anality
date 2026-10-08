@@ -8,6 +8,7 @@ import { DuplicateSuggestions, type DuplicateGroupForUi } from "@/components/cat
 import { findExactDuplicateGroups, findNearDuplicatePairs } from "@/lib/metrics/category-duplicates";
 import { CHANNEL_OPTIONS } from "@/lib/filters/types";
 import type { Brand, Category, Product } from "@/types/database";
+import { fetchAll } from "@/lib/supabase/fetch-all";
 
 interface OrderItemRow {
   original_name: string;
@@ -63,11 +64,12 @@ export default async function CategoriesPage({
   // nome do produto (mesmo critério simplificado do resto do sistema, ver
   // METRICS_AUDIT.md), todo o histórico (não um período, igual RFM em
   // /clientes: categoria não é uma métrica de período).
-  const { data: orderItemsRaw } = await supabase
+  const { data: orderItemsRaw } = await fetchAll(
+      supabase
     .from("orders")
     .select("status, ordered_at, order_items(original_name, quantity, total_price, is_addon)")
     .in("store_id", storeIds.length ? storeIds : fallback)
-    .limit(20000);
+    );
 
   interface OrderWithItems {
     status: string;
