@@ -2,11 +2,9 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
-import { resolvePeriod, APP_TIMEZONE, type PeriodPreset } from "@/lib/dates/period";
+import { resolvePeriod, resolveDayPeriod, type PeriodPreset } from "@/lib/dates/period";
 import { buildViewerProductSummaries, type ViewerProductSummary } from "@/lib/metrics/products-viewer";
 import type { SaleItemEvent } from "@/lib/metrics/live-sales";
-import { TZDate } from "@date-fns/tz";
-import { endOfDay, startOfDay } from "date-fns";
 import { fetchAll } from "@/lib/supabase/fetch-all";
 
 export type ViewerPeriodPreset = "hoje" | "ontem" | "7d";
@@ -190,8 +188,7 @@ export interface ViewerTerminalSaleRow {
 
 function resolveViewerPeriod(periodPreset: ViewerPeriodPreset, customDate?: string | null) {
   if (customDate) {
-    const day = new TZDate(`${customDate}T00:00:00`, APP_TIMEZONE);
-    return { start: startOfDay(day), end: endOfDay(day) };
+    return resolveDayPeriod(customDate);
   }
   return resolvePeriod(periodPreset as PeriodPreset);
 }
