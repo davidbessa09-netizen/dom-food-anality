@@ -26,6 +26,7 @@ import { resolveCanonicalNames, type CanonicalResolution } from "@/lib/products/
 import { LiveSalesTab } from "@/components/produtos/live-sales/live-sales-tab";
 import type { Brand, Category, Product } from "@/types/database";
 import type { LowPerformerRow } from "@/lib/metrics/product-performance";
+import { fetchAll } from "@/lib/supabase/fetch-all";
 
 const MIN_SAMPLE_DAYS = 14;
 const LOW_QUANTITY_THRESHOLD = 3;
@@ -202,7 +203,7 @@ export default async function ProductsPage({
     .lte("ordered_at", period.end.toISOString());
   if (filters.channel) ordersInPeriodQuery = ordersInPeriodQuery.eq("source_platform", filters.channel);
   if (filters.fulfillment) ordersInPeriodQuery = ordersInPeriodQuery.eq("fulfillment_type", filters.fulfillment);
-  const { data: ordersInPeriod } = await ordersInPeriodQuery;
+  const { data: ordersInPeriod } = await fetchAll(ordersInPeriodQuery);
 
   const ordersInPeriodTyped = (ordersInPeriod ?? []) as unknown as OrderWithItems[];
   const orderItemsFlat = flattenItems(ordersInPeriodTyped, resolution);
@@ -424,7 +425,7 @@ async function GrowthDeclineSection({
     .lte("ordered_at", previous.end.toISOString());
   if (filters.channel) previousOrdersQuery = previousOrdersQuery.eq("source_platform", filters.channel);
   if (filters.fulfillment) previousOrdersQuery = previousOrdersQuery.eq("fulfillment_type", filters.fulfillment);
-  const { data: previousOrders } = await previousOrdersQuery;
+  const { data: previousOrders } = await fetchAll(previousOrdersQuery);
   const previousRankingRows = buildProductRanking(flattenItems((previousOrders ?? []) as unknown as OrderWithItems[], resolution), itemType);
   const previousByName = new Map(previousRankingRows.map((r) => [r.name, r.quantity]));
 
@@ -624,10 +625,12 @@ async function LowPerformersTab({
   supabase: Awaited<ReturnType<typeof createClient>>;
   resolution: CanonicalResolution;
 }) {
-  const { data: allTimeOrdersRaw } = await supabase
+  const { data: allTimeOrdersRaw } = await fetchAll(
+      supabase
     .from("orders")
     .select("status, ordered_at, order_items(original_name, quantity, total_price, is_addon)")
-    .in("store_id", storeFallback);
+    .in("store_id", storeFallback)
+    );
 
   const allTimeItems = flattenItems((allTimeOrdersRaw ?? []) as unknown as OrderWithItems[], resolution);
   const allTimeRankingRows = buildProductRanking(allTimeItems, itemType);
@@ -707,10 +710,11 @@ async function CatalogTabContent({
   const productIds = products.map((p) => p.id);
   const fallback = ["00000000-0000-0000-0000-000000000000"];
 
-  const { data: allTimeOrdersRaw } = await supabase
+  const { data: allTimeOrdersRaw } = await fetchAll(
+      supabase
     .from("orders")
     .select("status, ordered_at, order_items(original_name, quantity, total_price, is_addon)")
-    .limit(20000);
+    );
 
   const allTimeRanking = buildProductRanking(flattenItems((allTimeOrdersRaw ?? []) as unknown as OrderWithItems[], resolution), "all");
   const lastSoldByName = new Map(allTimeRanking.map((r) => [r.name, r.lastSoldAt]));

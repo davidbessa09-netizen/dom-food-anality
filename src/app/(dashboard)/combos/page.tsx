@@ -8,6 +8,7 @@ import { DateRangePicker } from "@/components/dashboard/date-range-picker";
 import { isPeriodPreset, resolveCustomPeriod, resolvePeriod, type PeriodPreset } from "@/lib/dates/period";
 import { buildProductPairs, type ComboOrderItemInput } from "@/lib/metrics/combos";
 import type { Brand, Store } from "@/types/database";
+import { fetchAll } from "@/lib/supabase/fetch-all";
 
 export default async function CombosPage({
   searchParams,
@@ -46,12 +47,14 @@ export default async function CombosPage({
   const storeIds = (stores ?? []).map((s) => s.id);
   const storeFallback = storeIds.length ? storeIds : fallback;
 
-  const { data: ordersInPeriod } = await supabase
+  const { data: ordersInPeriod } = await fetchAll(
+      supabase
     .from("orders")
     .select("id, status, order_items(original_name, is_addon)")
     .in("store_id", storeFallback)
     .gte("ordered_at", period.start.toISOString())
-    .lte("ordered_at", period.end.toISOString());
+    .lte("ordered_at", period.end.toISOString())
+    );
 
   interface OrderWithItems {
     id: string;

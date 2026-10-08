@@ -26,6 +26,7 @@ import { StoreComparisonTable, type StoreComparisonRow } from "@/components/loja
 import { NormalizeToggle } from "@/components/lojas/normalize-toggle";
 import { AlertTriangle, Receipt, Repeat, TrendingUp, XCircle } from "lucide-react";
 import type { Brand, Store } from "@/types/database";
+import { fetchAll } from "@/lib/supabase/fetch-all";
 
 const PLATFORM_LABEL: Record<string, string> = {
   anota_ai: "Anota AI",
@@ -104,7 +105,7 @@ export default async function StoresComparisonPage({
     .gte("ordered_at", period.start.toISOString())
     .lte("ordered_at", period.end.toISOString());
   if (filters.channel) currentOrdersQuery = currentOrdersQuery.eq("source_platform", filters.channel);
-  const { data: currentOrdersRaw } = await currentOrdersQuery;
+  const { data: currentOrdersRaw } = await fetchAll(currentOrdersQuery);
 
   let previousOrdersQuery = supabase
     .from("orders")
@@ -113,7 +114,7 @@ export default async function StoresComparisonPage({
     .gte("ordered_at", previous.start.toISOString())
     .lte("ordered_at", previous.end.toISOString());
   if (filters.channel) previousOrdersQuery = previousOrdersQuery.eq("source_platform", filters.channel);
-  const { data: previousOrdersRaw } = await previousOrdersQuery;
+  const { data: previousOrdersRaw } = await fetchAll(previousOrdersQuery);
 
   // Recorrência usa a 1ª compra em todo o histórico visível, mesma base do
   // dashboard (ver METRICS_AUDIT.md) — não é recalculada por loja isolada,

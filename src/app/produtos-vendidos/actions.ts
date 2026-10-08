@@ -7,6 +7,7 @@ import { buildViewerProductSummaries, type ViewerProductSummary } from "@/lib/me
 import type { SaleItemEvent } from "@/lib/metrics/live-sales";
 import { TZDate } from "@date-fns/tz";
 import { endOfDay, startOfDay } from "date-fns";
+import { fetchAll } from "@/lib/supabase/fetch-all";
 
 export type ViewerPeriodPreset = "hoje" | "ontem" | "7d";
 
@@ -127,12 +128,14 @@ export async function getViewerProductsSold(filters: ViewerFilters): Promise<Vie
   const scopedStoreIds = filters.storeIds.length > 0 ? filters.storeIds.filter((id) => authorizedStoreIds.includes(id)) : authorizedStoreIds;
   const fallback = ["00000000-0000-0000-0000-000000000000"];
 
-  const { data: orders } = await supabase
+  const { data: orders } = await fetchAll(
+      supabase
     .from("orders")
     .select("id, ordered_at, status, store_id, order_items(original_name, quantity, is_addon)")
     .in("store_id", scopedStoreIds.length ? scopedStoreIds : fallback)
     .gte("ordered_at", period.start.toISOString())
-    .lte("ordered_at", period.end.toISOString());
+    .lte("ordered_at", period.end.toISOString())
+    );
 
   const rows = (orders ?? []) as unknown as ViewerOrderRow[];
   const events: SaleItemEvent[] = rows.flatMap((order) =>
@@ -234,13 +237,15 @@ export async function getViewerSalesByTerminal(filters: ViewerTerminalFilters): 
   const scopedStoreIds = filters.storeIds.length > 0 ? filters.storeIds.filter((id) => authorizedStoreIds.includes(id)) : authorizedStoreIds;
   const fallback = ["00000000-0000-0000-0000-000000000000"];
 
-  const { data: orders } = await supabase
+  const { data: orders } = await fetchAll(
+      supabase
     .from("orders")
     .select("ordered_at, source_platform, raw_payload, order_items(original_name, quantity, is_addon)")
     .in("store_id", scopedStoreIds.length ? scopedStoreIds : fallback)
     .gte("ordered_at", period.start.toISOString())
     .lte("ordered_at", period.end.toISOString())
-    .order("ordered_at", { ascending: false });
+    .order("ordered_at", { ascending: false })
+    );
 
   const rows = (orders ?? []) as unknown as ViewerTerminalOrderRow[];
 

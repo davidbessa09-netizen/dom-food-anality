@@ -17,6 +17,7 @@ import {
 } from "@/lib/metrics/cancellations";
 import { cancellationRate as calculateCancellationRate, type OrderMetricInput } from "@/lib/metrics/orders";
 import type { Brand, Store } from "@/types/database";
+import { fetchAll } from "@/lib/supabase/fetch-all";
 
 function formatCurrency(value: number) {
   return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -67,20 +68,24 @@ export default async function CancellationsPage({
   const storeIds = (stores ?? []).map((s) => s.id);
   const storeFallback = storeIds.length ? storeIds : fallback;
 
-  const { data: allOrdersRaw } = await supabase
+  const { data: allOrdersRaw } = await fetchAll(
+      supabase
     .from("orders")
     .select("id, store_id, status, ordered_at")
     .in("store_id", storeFallback)
     .gte("ordered_at", period.start.toISOString())
-    .lte("ordered_at", period.end.toISOString());
+    .lte("ordered_at", period.end.toISOString())
+    );
 
-  const { data: cancelledOrdersRaw } = await supabase
+  const { data: cancelledOrdersRaw } = await fetchAll(
+      supabase
     .from("orders")
     .select("id, store_id, gross_amount, ordered_at, cancellations(reason)")
     .in("store_id", storeFallback)
     .eq("status", "cancelado")
     .gte("ordered_at", period.start.toISOString())
-    .lte("ordered_at", period.end.toISOString());
+    .lte("ordered_at", period.end.toISOString())
+    );
 
   interface CancelledOrderRaw {
     id: string;

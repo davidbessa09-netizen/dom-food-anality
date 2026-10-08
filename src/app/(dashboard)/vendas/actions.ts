@@ -4,6 +4,7 @@ import ExcelJS from "exceljs";
 import { createClient } from "@/lib/supabase/server";
 import { formatPaymentMethod } from "@/lib/format/payment-method";
 import { formatDateTimeBR } from "@/lib/dates/format";
+import { fetchAll } from "@/lib/supabase/fetch-all";
 
 const EXPORT_ROW_CAP = 5000;
 
@@ -70,8 +71,7 @@ export async function exportTransactionsXlsx(params: ExportTransactionsParams) {
     .in("store_id", params.storeIds.length ? params.storeIds : fallback)
     .gte("ordered_at", params.periodStart)
     .lte("ordered_at", params.periodEnd)
-    .order("ordered_at", { ascending: false })
-    .limit(EXPORT_ROW_CAP);
+    .order("ordered_at", { ascending: false });
 
   if (params.channel) query = query.eq("source_platform", params.channel);
   if (params.status) query = query.eq("status", params.status);
@@ -81,7 +81,7 @@ export async function exportTransactionsXlsx(params: ExportTransactionsParams) {
   if (params.minValue) query = query.gte("gross_amount", Number(params.minValue));
   if (params.maxValue) query = query.lte("gross_amount", Number(params.maxValue));
 
-  const { data } = await query;
+  const { data } = await fetchAll(query, { max: EXPORT_ROW_CAP });
   const rows = (data ?? []) as unknown as ExportOrderRow[];
 
   const workbook = new ExcelJS.Workbook();

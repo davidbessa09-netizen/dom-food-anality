@@ -56,6 +56,7 @@ import {
   type SyncAlert,
 } from "@/lib/metrics/alerts";
 import type { Brand, Product, Store } from "@/types/database";
+import { fetchAll } from "@/lib/supabase/fetch-all";
 
 const STALE_THRESHOLD_MINUTES = 60;
 const RECENT_JOBS_WINDOW_DAYS = 1;
@@ -214,19 +215,23 @@ export default async function ExecutiveDashboardPage({
   const period = customFrom && customTo ? resolveCustomPeriod(customFrom, customTo) : resolvePeriod(preset);
   const previous = previousPeriod(period);
 
-  const { data: currentOrdersRaw } = await supabase
+  const { data: currentOrdersRaw } = await fetchAll(
+      supabase
     .from("orders")
     .select("id, store_id, status, gross_amount, net_amount, discount_amount, delivery_fee_amount, customer_id, ordered_at")
     .in("store_id", storeFallback)
     .gte("ordered_at", period.start.toISOString())
-    .lte("ordered_at", period.end.toISOString());
+    .lte("ordered_at", period.end.toISOString())
+    );
 
-  const { data: previousOrdersRaw } = await supabase
+  const { data: previousOrdersRaw } = await fetchAll(
+      supabase
     .from("orders")
     .select("id, store_id, status, gross_amount, net_amount, discount_amount, delivery_fee_amount, customer_id, ordered_at")
     .in("store_id", storeFallback)
     .gte("ordered_at", previous.start.toISOString())
-    .lte("ordered_at", previous.end.toISOString());
+    .lte("ordered_at", previous.end.toISOString())
+    );
 
   type StoreOrderRow = OrderMetricInput & { store_id: string; ordered_at: string };
   const currentOrders = (currentOrdersRaw ?? []) as StoreOrderRow[];
@@ -236,11 +241,13 @@ export default async function ExecutiveDashboardPage({
 
   // "Clientes novos"/"Recorrentes" precisam da 1ª compra em TODO o histórico,
   // não só no período — e a mesma base alimenta a segmentação RFM abaixo.
-  const { data: allTimeOrders } = await supabase
+  const { data: allTimeOrders } = await fetchAll(
+      supabase
     .from("orders")
     .select("customer_id, gross_amount, ordered_at")
     .in("store_id", storeFallback)
-    .not("customer_id", "is", null);
+    .not("customer_id", "is", null)
+    );
 
   const firstOrderDateByCustomer = new Map<string, string>();
   for (const o of allTimeOrders ?? []) {
@@ -269,13 +276,15 @@ export default async function ExecutiveDashboardPage({
 
   const recentOrders = (recentOrdersRaw ?? []) as unknown as RecentOrderRow[];
 
-  const { data: cancelledOrdersRaw } = await supabase
+  const { data: cancelledOrdersRaw } = await fetchAll(
+      supabase
     .from("orders")
     .select("id, store_id, gross_amount, ordered_at, cancellations(reason)")
     .in("store_id", storeFallback)
     .eq("status", "cancelado")
     .gte("ordered_at", period.start.toISOString())
-    .lte("ordered_at", period.end.toISOString());
+    .lte("ordered_at", period.end.toISOString())
+    );
 
   const cancelledOrders: CancelledOrderInput[] = ((cancelledOrdersRaw ?? []) as unknown as CancelledOrderRaw[]).map(
     (o) => {
@@ -297,12 +306,14 @@ export default async function ExecutiveDashboardPage({
     .in("brand_id", brandIds.length ? brandIds : fallback)
     .returns<Product[]>();
 
-  const { data: orderItemsRaw } = await supabase
+  const { data: orderItemsRaw } = await fetchAll(
+      supabase
     .from("orders")
     .select("status, ordered_at, order_items(original_name, quantity, total_price, is_addon)")
     .in("store_id", storeFallback)
     .gte("ordered_at", period.start.toISOString())
-    .lte("ordered_at", period.end.toISOString());
+    .lte("ordered_at", period.end.toISOString())
+    );
 
   function flattenItems(rows: OrderWithItems[]): ProductOrderItemInput[] {
     return rows.flatMap((order) =>

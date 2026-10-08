@@ -6,6 +6,7 @@ import { bestMatchWithCategory, isSafeForBulkResolution, type CandidateProductWi
 import { PendingVariantCard } from "@/app/(dashboard)/correspondencia-produtos/pending-variant-card";
 import { BulkResolveButton } from "@/app/(dashboard)/correspondencia-produtos/bulk-resolve-button";
 import type { Brand, Category, Product } from "@/types/database";
+import { fetchAll } from "@/lib/supabase/fetch-all";
 
 const BULK_MATCH_THRESHOLD = 0.85;
 
@@ -88,12 +89,13 @@ export async function VariantsTabContent({ brandIds }: { brandIds: string[] }) {
   // por variante.
   const { data: stores } = await supabase.from("stores").select("id").in("brand_id", brandIds.length ? brandIds : fallback);
   const storeIds = (stores ?? []).map((s) => s.id);
-  const { data: orderItemsRaw } = await supabase
+  const { data: orderItemsRaw } = await fetchAll(
+      supabase
     .from("orders")
     .select("status, order_items(original_name, total_price, is_addon)")
     .in("store_id", storeIds.length ? storeIds : fallback)
     .neq("status", "cancelado")
-    .limit(20000);
+    );
 
   interface OrderWithItems {
     status: string;
