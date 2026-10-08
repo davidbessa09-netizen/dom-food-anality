@@ -9,6 +9,7 @@ import { KpiCard } from "@/components/dashboard/kpi-card";
 import { buildRfmSegmentation, computeCustomerStats, type CustomerOrderInput, type RfmSegment } from "@/lib/metrics/rfm";
 import { Repeat, UserMinus, UserPlus, Users, Zap } from "lucide-react";
 import type { Brand, Store } from "@/types/database";
+import { fetchAll } from "@/lib/supabase/fetch-all";
 
 const MIN_SAMPLE_SIZE = 10;
 const INACTIVE_RECENCY_SCORE_THRESHOLD = 2;
@@ -76,11 +77,13 @@ export default async function CustomersRfmPage({
   const storeFallback = scopedStoreIds.length ? scopedStoreIds : fallback;
 
   // RFM usa todo o histórico sincronizado, não um período — ver METRICS.md.
-  const { data: ordersRaw } = await supabase
+  const { data: ordersRaw } = await fetchAll(
+      supabase
     .from("orders")
     .select("customer_id, gross_amount, ordered_at")
     .in("store_id", storeFallback)
-    .not("customer_id", "is", null);
+    .not("customer_id", "is", null)
+    );
 
   const customerOrders: CustomerOrderInput[] = (ordersRaw ?? []).map((o) => ({
     customer_id: o.customer_id as string,
