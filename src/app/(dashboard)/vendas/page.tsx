@@ -29,6 +29,7 @@ import { formatPaymentMethod } from "@/lib/format/payment-method";
 import { CHANNEL_OPTIONS, FULFILLMENT_OPTIONS, ORDER_STATUS_OPTIONS } from "@/lib/filters/types";
 import { Percent, Receipt, ShoppingCart, Truck, Wallet } from "lucide-react";
 import type { Brand, Store } from "@/types/database";
+import { fetchAll } from "@/lib/supabase/fetch-all";
 
 const TRANSACTIONS_PAGE_SIZE = 25;
 const FILTER_OPTIONS_SAMPLE = 2000;
@@ -180,7 +181,7 @@ async function AnalysisTab({
     .gte("ordered_at", periodStart)
     .lte("ordered_at", periodEnd);
   if (channel) currentQuery = currentQuery.eq("source_platform", channel);
-  const { data: currentOrdersRaw } = await currentQuery;
+  const { data: currentOrdersRaw } = await fetchAll(currentQuery);
 
   let previousQuery = supabase
     .from("orders")
@@ -189,7 +190,7 @@ async function AnalysisTab({
     .gte("ordered_at", previousStart)
     .lte("ordered_at", previousEnd);
   if (channel) previousQuery = previousQuery.eq("source_platform", channel);
-  const { data: previousOrdersRaw } = await previousQuery;
+  const { data: previousOrdersRaw } = await fetchAll(previousQuery);
 
   const currentOrders = (currentOrdersRaw ?? []) as (OrderMetricInput & {
     ordered_at: string;
@@ -387,14 +388,16 @@ async function TransactionsTab({
   // rodam em paralelo em vez de sequencial pra não somar a latência das
   // duas no tempo de carregamento da página.
   const [{ data: sampleRows }, matchedCustomers] = await Promise.all([
-    supabase
-      .from("orders")
-      .select("payment_method, neighborhood_raw")
-      .in("store_id", storeFallback)
-      .gte("ordered_at", periodStart)
-      .lte("ordered_at", periodEnd)
-      .order("ordered_at", { ascending: false })
-      .limit(FILTER_OPTIONS_SAMPLE),
+    fetchAll(
+      supabase
+        .from("orders")
+        .select("payment_method, neighborhood_raw")
+        .in("store_id", storeFallback)
+        .gte("ordered_at", periodStart)
+        .lte("ordered_at", periodEnd)
+        .order("ordered_at", { ascending: false }),
+      { max: FILTER_OPTIONS_SAMPLE }
+    ),
     search
       ? supabase
           .from("customers")
