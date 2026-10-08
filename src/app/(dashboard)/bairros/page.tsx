@@ -8,6 +8,7 @@ import { DateRangePicker } from "@/components/dashboard/date-range-picker";
 import { isPeriodPreset, resolveCustomPeriod, resolvePeriod, type PeriodPreset } from "@/lib/dates/period";
 import { ordersByNeighborhood, type DeliveryOrderInput } from "@/lib/metrics/neighborhoods";
 import type { Brand, Store } from "@/types/database";
+import { fetchAll } from "@/lib/supabase/fetch-all";
 
 function formatCurrency(value: number) {
   return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -50,13 +51,15 @@ export default async function NeighborhoodsPage({
   const storeIds = (stores ?? []).map((s) => s.id);
   const storeFallback = storeIds.length ? storeIds : fallback;
 
-  const { data: deliveryOrdersRaw } = await supabase
+  const { data: deliveryOrdersRaw } = await fetchAll(
+      supabase
     .from("orders")
     .select("neighborhood_raw, gross_amount, status")
     .in("store_id", storeFallback)
     .eq("fulfillment_type", "entrega")
     .gte("ordered_at", period.start.toISOString())
-    .lte("ordered_at", period.end.toISOString());
+    .lte("ordered_at", period.end.toISOString())
+    );
 
   const deliveryOrders: DeliveryOrderInput[] = (deliveryOrdersRaw ?? []).map((o) => ({
     neighborhood_raw: o.neighborhood_raw,
