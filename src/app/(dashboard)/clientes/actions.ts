@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser, hasWriteAccess } from "@/lib/auth/session";
 import { logAudit } from "@/lib/audit/log";
 import { formatDateBR } from "@/lib/dates/format";
+import { fetchAll } from "@/lib/supabase/fetch-all";
 
 export interface AnonymizeResult {
   ok: boolean;
@@ -134,11 +135,13 @@ export async function getCustomerHistory(customerId: string): Promise<CustomerHi
     };
   });
 
-  const { data: allOrdersForTotal } = await supabase
+  const { data: allOrdersForTotal } = await fetchAll(
+      supabase
     .from("orders")
     .select("gross_amount, status")
     .eq("customer_id", customerId)
-    .neq("status", "cancelado");
+    .neq("status", "cancelado")
+    );
   const totalRevenue = (allOrdersForTotal ?? []).reduce((sum, o) => sum + o.gross_amount, 0);
 
   return {
